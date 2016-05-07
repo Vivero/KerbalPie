@@ -15,10 +15,11 @@ else:
 from PyQt5 import QtCore, uic
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QColor, QPalette
-from PyQt5.QtWidgets import QAbstractItemView, QApplication, QHeaderView, QWidget
+from PyQt5.QtWidgets import QAbstractItemView, QApplication, QHeaderView, QTabWidget, QWidget
 
 from logger import KPLogger
 from widgets.Plotter import Plotter
+from widgets.PidControllerQ import PidControllerPanel
 from flightcontrol import KPFlightDataModel, KPFlightController
 from missioncontrol import KPMissionProgramsModel, KPMissionProgramsDatabase
 
@@ -28,7 +29,7 @@ from missioncontrol import KPMissionProgramsModel, KPMissionProgramsDatabase
     
 class KerbalPie(QWidget):
 
-    subsys = 'PYDASH'
+    subsys = 'KERBALPIE'
     
     # configuration file named sections
     _CFG_GLOBALS_SECTION = 'GLOBALS'
@@ -42,7 +43,7 @@ class KerbalPie(QWidget):
     
     # C O N S T R U C T O R 
     #===========================================================================
-    def __init__(self, parent=None, config_filename=os.path.join('..', 'data', 'kerbalpie.cfg')):
+    def __init__(self, parent=None, config_filename=os.path.join('..', 'data', 'kerbalpie.cfg'), debug_on=False):
         super(KerbalPie, self).__init__(parent)
         uic.loadUi(os.path.join('..', 'data', 'KerbalPie.ui'), self)
         
@@ -63,22 +64,29 @@ class KerbalPie(QWidget):
         # flight controller
         #-----------------------------------------------------------------------
         
+        # controller thread
+        self._flight_thread = QtCore.QThread()
+        self._flight_ctrl = KPFlightController(krpc_address=self.config['krpc_address'], krpc_rpc_port=self.config['krpc_rpc_port'], krpc_stream_port=self.config['krpc_stream_port'], krpc_name=self.config['krpc_client_name'])
+        self._flight_ctrl.moveToThread(self._flight_thread)
+        
         # gui items
         self.flightControl_controllerSelection.addItems([
             "Vertical Speed Controller",
             "Altitude Controller",
         ])
         
+        # PID controller panels
+        self.flightControl_tuningTabGroup = QTabWidget(parent=None)
+        for ctrl in self._flight_ctrl.controllers:
+            ctrl_panel = PidControllerPanel(ctrl, parent=None)
+            self.flightControl_tuningTabGroup.addTab(ctrl_panel, ctrl.name)
+        self.flightControl_tuningGroup.layout().addWidget(self.flightControl_tuningTabGroup)
+        
         self.flightControl_refEdit.valueChanged.connect(self.flightControl_ref_changed)
         self.flightControl_kpEdit.valueChanged.connect(self.flightControl_kp_changed)
         self.flightControl_kiEdit.valueChanged.connect(self.flightControl_ki_changed)
         self.flightControl_kdEdit.valueChanged.connect(self.flightControl_kd_changed)
         self.flightControl_controllerSelection.currentTextChanged.connect(self.flightControl_controllerSelection_changed)
-        
-        # controller thread
-        self._flight_thread = QtCore.QThread()
-        self._flight_ctrl = KPFlightController()
-        self._flight_ctrl.moveToThread(self._flight_thread)
         
         # flight controller thread connections
         self._flight_thread.started.connect(self._flight_ctrl.process)
@@ -311,7 +319,16 @@ class KerbalPie(QWidget):
             cfg = ConfigParser.SafeConfigParser()
         cfg.read(config_filename)
         
-        return cfg
+        config = {
+            'logger_directory' : cfg.get(KerbalPie._CFG_GLOBALS_SECTION, 'logger_directory'),
+            'logger_filename' : cfg.get(KerbalPie._CFG_GLOBALS_SECTION, 'logger_filename'),
+            'krpc_address' : cfg.get(KerbalPie._CFG_KRPC_SECTION, 'krpc_address'),
+            'krpc_client_name' : cfg.get(KerbalPie._CFG_KRPC_SECTION, 'krpc_client_name'),
+            'krpc_rpc_port' : cfg.getint(KerbalPie._CFG_KRPC_SECTION, 'krpc_rpc_port'),
+            'krpc_stream_port' : cfg.getint(KerbalPie._CFG_KRPC_SECTION, 'krpc_stream_port'),
+        }
+        
+        return config
         
         
     def _clear_log_text(self):
@@ -352,7 +369,7 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     
     # start KerbalPie
-    kerbalpie = KerbalPie(config_filename=config_filename)
+    kerbalpie = KerbalPie(config_filename=config_filename, debug_on=args.debug)
     kerbalpie.show()
     
     # GUI event loop

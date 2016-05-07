@@ -60,3 +60,4 @@ target/
 
 # KerbalPie
 log/*.log
+*.lnk

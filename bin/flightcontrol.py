@@ -8,6 +8,7 @@ from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal, pyq
 from kptools import PidController
 from logger import KPLogger
 from missioncontrol import KPMissionProgramsDatabase
+from widgets.PidControllerQ import PidControllerQ
 
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -53,11 +54,19 @@ class KPFlightController(QtCore.QObject):
         # flight data
         self._telemetry = {}
         
-        # flight control
-        self._mission_program_id = KPMissionProgramsDatabase.mission_program_id_lookup[0]
-        
+        # flight controllers
         self.vertical_speed_ctrl = PidController(kp=0.181, ki=0.09, kd=0.005, output_min=0.0, output_max=1.0, set_point=0.0)
         self.altitude_ctrl = PidController(kp=0.2, ki=0.005, kd=0.005, output_min=-5.0, output_max=5.0, set_point=85.0)
+        
+        self.vertical_speed_ctrl_q = PidControllerQ(kp=0.181, ki=0.09, kd=0.005, output_min=0.0, output_max=1.0, set_point=0.0, name="Vertical Speed Controller", parent=self)
+        self.altitude_ctrl_q = PidControllerQ(kp=0.2, ki=0.005, kd=0.005, output_min=-5.0, output_max=5.0, set_point=85.0, name="Altitude Controller", parent=self)
+        self.controllers = []
+        self.controllers.append(self.vertical_speed_ctrl_q)
+        self.controllers.append(self.altitude_ctrl_q)
+        
+        # flight control program
+        self._mission_program_id = KPMissionProgramsDatabase.mission_program_id_lookup[0]
+        
         
         
         
@@ -170,6 +179,7 @@ class KPFlightController(QtCore.QObject):
             if self._telemetry['vessel_max_thrust'] > 0.0:
                 vspeed_cmd = self.altitude_ctrl.update(self._telemetry['vessel_mean_altitude'])
                 self.vertical_speed_ctrl.set_point = vspeed_cmd
+                self.vertical_speed_ctrl_q.setSetpoint(vspeed_cmd)
                 
                 throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                 self._vessel_control.throttle = throttle_cmd
@@ -200,7 +210,12 @@ class KPFlightController(QtCore.QObject):
             
                 throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                 self._vessel_control.throttle = throttle_cmd
+                
+                
+    def _set_active_program_settings(self, program_id):
+        pass
             
+        
         
     
     def _krpc_heartbeat(self):
@@ -254,15 +269,15 @@ class KPFlightController(QtCore.QObject):
     @pyqtSlot(int)
     def set_active_program(self, program_num):
         if program_num < KPMissionProgramsDatabase.num_mission_programs:
-            for program_id in KPMissionProgramsDatabase.mission_program_id_lookup:
-                self._mission_program_id = KPMissionProgramsDatabase.mission_program_id_lookup[program_num]
+            self._mission_program_id = KPMissionProgramsDatabase.mission_program_id_lookup[program_num]
+            self._set_active_program_settings(self._mission_program_id)
                 
         
     @pyqtSlot()
     def krpc_connect(self):
         try:
             # attempt to connect
-            self._log('Connecting to KRPC ...')
+            self._log('Connecting to KRPC at {:s}:{:d} ...'.format(self.krpc_address, self.krpc_rpc_port))
             self._krpc = krpc.connect(name=self.krpc_client_name, address=self.krpc_address, rpc_port=self.krpc_rpc_port, stream_port=self.krpc_stream_port)
             
             # perform initial setup

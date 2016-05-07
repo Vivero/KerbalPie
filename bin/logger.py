@@ -31,7 +31,7 @@ class KPLogger(threading.Thread):
     log_queue = Queue(500)
     log_lock = Lock()
 
-    def __init__(self, log_dir=os.getcwd(), log_name="kerbalpie.log"):
+    def __init__(self, log_dir=os.getcwd(), log_name="kerbalpie.log", debug_on=False):
         threading.Thread.__init__(self)
         self.log_start_time = time.time()
         self._log_sleep_time = 0.050 # seconds
@@ -39,6 +39,8 @@ class KPLogger(threading.Thread):
         self.stop.clear()
         
         self.log_full_filename = os.path.join(log_dir, log_name)
+        
+        self.debug_on = debug_on
         
         
     def run(self):
