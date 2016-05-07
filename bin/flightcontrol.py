@@ -213,7 +213,25 @@ class KPFlightController(QtCore.QObject):
                 
                 
     def _set_active_program_settings(self, program_id):
-        pass
+        if self._mission_program_id == 'vspeed_ctrl_manual':
+            self.vertical_speed_ctrl_q.setGainsEditable(True)
+            self.vertical_speed_ctrl_q.setSetpointEditable(True)
+        
+        elif self._mission_program_id == 'vspeed_ctrl_auto':
+            self.vertical_speed_ctrl_q.setGainsEditable(False)
+            self.vertical_speed_ctrl_q.setSetpointEditable(True)
+        
+        elif self._mission_program_id == 'altitude_ctrl_manual':
+            self.vertical_speed_ctrl_q.setGainsEditable(False)
+            self.vertical_speed_ctrl_q.setSetpointEditable(False)
+        
+        elif self._mission_program_id == 'altitude_ctrl_auto':
+            self.vertical_speed_ctrl_q.setGainsEditable(False)
+            self.vertical_speed_ctrl_q.setSetpointEditable(False)
+        
+        elif self._mission_program_id == 'controlled_descent':
+            self.vertical_speed_ctrl_q.setGainsEditable(False)
+            self.vertical_speed_ctrl_q.setSetpointEditable(False)
             
         
         

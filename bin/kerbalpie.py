@@ -54,11 +54,7 @@ class KerbalPie(QWidget):
         
         # general message logging
         #-----------------------------------------------------------------------
-        self._logger_thread = KPLogger(
-            log_dir=self.config.get(
-                KerbalPie._CFG_GLOBALS_SECTION, 'logger_directory'),
-            log_name=self.config.get(
-                KerbalPie._CFG_GLOBALS_SECTION, 'logger_filename'))
+        self._logger_thread = KPLogger(log_dir=self.config['logger_directory'], log_name=self.config['logger_filename'])
         self._logger_thread.start()
         
         # flight controller

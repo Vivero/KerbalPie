@@ -38,6 +38,8 @@ class PidControllerQ(QtCore.QObject):
     outputMinChanged = pyqtSignal(float)
     outputMaxChanged = pyqtSignal(float)
     outputChanged = pyqtSignal(float)
+    isGainsEditableChanged = pyqtSignal(bool)
+    isSetpointEditableChanged = pyqtSignal(bool)
         
     # C O N S T R U C T O R 
     #===========================================================================
@@ -91,6 +93,20 @@ class PidControllerQ(QtCore.QObject):
         
     def getOutputMax(self):
         return self._pid.output_max
+        
+    def setGainsEditable(self, is_editable):
+        self._isGainsEditable = is_editable
+        self.isGainsEditableChanged.emit(is_editable)
+        
+    def getGainsEditable(self):
+        return self._isGainsEditable
+        
+    def setSetpointEditable(self, is_editable):
+        self._isSetpointEditable = is_editable
+        self.isSetpointEditableChanged.emit(is_editable)
+        
+    def getSetpointEditable(self):
+        return self._isSetpointEditable
         
     def update(self, current_value):
         output = self._pid.update(current_value)
@@ -170,9 +186,20 @@ class PidControllerPanel(QWidget):
         self._pid.kpChanged.connect(kp_editor.setValue)
         self._pid.kiChanged.connect(ki_editor.setValue)
         self._pid.kdChanged.connect(kd_editor.setValue)
+        self._pid.isGainsEditableChanged.connect(self.setControllerGainsEditable)
+        self._pid.isSetpointEditableChanged.connect(self.setControllerSetpointEditable)
         
         
     # S L O T S 
     #===========================================================================
+    @pyqtSlot(bool)
+    def setControllerGainsEditable(self, is_editable):
+        for editor in self._editors[1:]:
+            editor.setReadOnly(not is_editable)
+            
+    @pyqtSlot(bool)
+    def setControllerSetpointEditable(self, is_editable):
+        self._editors[0].setReadOnly(not is_editable)
+        
     
         

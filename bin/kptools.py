@@ -18,7 +18,7 @@ class PidController():
     #===========================================================================
     def __init__(self, kp, ki, kd, output_min, output_max, set_point):
     
-        # modifiable gains
+        # modifiable settings
         self.kp = kp
         self.ki = ki
         self.kd = kd
