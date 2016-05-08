@@ -7,6 +7,26 @@ import math, time
 from time import sleep
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#  F U N C T I O N S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+def vector_dot_product(x, y):
+    return sum(x[i] * y[i] for i in range(len(x)))
+    
+def vector_length(x):
+    return math.sqrt(vector_dot_product(x,x))
+    
+def vector_normalize(x):
+    length = vector_length(x)
+    return [x[i] / length for i in range(len(x))]
+    
+def vector_project_onto_plane(x, n):
+    n_normalized = vector_normalize(n)
+    d = vector_dot_product(x, n) / vector_length(n)
+    p = [d * n_normalized[i] for i in range(len(n))]
+    return [x[i] - p[i] for i in range(len(x))]
+
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#  C L A S S E S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 

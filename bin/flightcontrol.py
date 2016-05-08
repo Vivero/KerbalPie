@@ -5,7 +5,7 @@ from time import sleep
 from PyQt5 import QtCore
 from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal, pyqtSlot
 
-from kptools import PidController
+from kptools import PidController, vector_dot_product, vector_length, vector_normalize, vector_project_onto_plane
 from logger import KPLogger
 from missioncontrol import KPMissionProgramsDatabase
 from widgets.PidControllerQ import PidControllerQ
@@ -55,14 +55,11 @@ class KPFlightController(QtCore.QObject):
         self._telemetry = {}
         
         # flight controllers
-        self.vertical_speed_ctrl = PidController(kp=0.181, ki=0.09, kd=0.005, output_min=0.0, output_max=1.0, set_point=0.0)
-        self.altitude_ctrl = PidController(kp=0.2, ki=0.005, kd=0.005, output_min=-5.0, output_max=5.0, set_point=85.0)
-        
-        self.vertical_speed_ctrl_q = PidControllerQ(kp=0.181, ki=0.09, kd=0.005, output_min=0.0, output_max=1.0, set_point=0.0, name="Vertical Speed Controller", parent=self)
-        self.altitude_ctrl_q = PidControllerQ(kp=0.2, ki=0.005, kd=0.005, output_min=-5.0, output_max=5.0, set_point=85.0, name="Altitude Controller", parent=self)
+        self.vertical_speed_ctrl = PidControllerQ(kp=0.181, ki=0.09, kd=0.005, output_min=0.0, output_max=1.0, set_point=0.0, name="Vertical Speed Controller", parent=self)
+        self.altitude_ctrl = PidControllerQ(kp=1.0, ki=0.005, kd=0.005, output_min=-5.0, output_max=5.0, set_point=85.0, name="Altitude Controller", parent=self)
         self.controllers = []
-        self.controllers.append(self.vertical_speed_ctrl_q)
-        self.controllers.append(self.altitude_ctrl_q)
+        self.controllers.append(self.vertical_speed_ctrl)
+        self.controllers.append(self.altitude_ctrl)
         
         # flight control program
         self._mission_program_id = KPMissionProgramsDatabase.mission_program_id_lookup[0]
@@ -98,6 +95,7 @@ class KPFlightController(QtCore.QObject):
         self._vessel_body_mass          = self._krpc.add_stream(getattr, self._vessel_body(), 'mass')
         self._vessel_body_name          = self._krpc.add_stream(getattr, self._vessel_body(), 'name')
         self._vessel_surface_ref        = self._krpc.add_stream(getattr, self._vessel, 'surface_reference_frame')
+        self._vessel_surface_vel_ref    = self._krpc.add_stream(getattr, self._vessel, 'surface_velocity_reference_frame')
         self._vessel_body_ref           = self._krpc.add_stream(getattr, self._vessel_body(), 'reference_frame')
         self._vessel_flight_bdy         = self._krpc.add_stream(self._vessel.flight, self._vessel_body_ref())
         self._vessel_flight_srf         = self._krpc.add_stream(self._vessel.flight, self._vessel_surface_ref())
@@ -110,6 +108,13 @@ class KPFlightController(QtCore.QObject):
         self._vessel_throttle           = self._krpc.add_stream(getattr, self._vessel_control, 'throttle')
         self._vessel_mean_altitude      = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'mean_altitude')
         self._vessel_surface_altitude   = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'surface_altitude')
+        
+        
+        # draw vectors
+        self._krpc.space_center.clear_drawing()
+        self._krpc.space_center.draw_direction((1.0, 0.0, 0.0), self._vessel_surface_vel_ref(), (255, 0, 0), 10.0)
+        self._krpc.space_center.draw_direction((0.0, 1.0, 0.0), self._vessel_surface_vel_ref(), (0, 255, 0), 10.0)
+        self._krpc.space_center.draw_direction((0.0, 0.0, 1.0), self._vessel_surface_vel_ref(), (0, 0, 255), 10.0)
         
         
         self._log('Tracking vessel "{:s}"'.format(self._vessel.name))
@@ -128,6 +133,7 @@ class KPFlightController(QtCore.QObject):
         self._telemetry['vessel_body_mass']     = self._vessel_body_mass()
         self._telemetry['vessel_body_name']     = self._vessel_body_name()
         self._telemetry['vessel_surface_ref']   = self._vessel_surface_ref()
+        self._telemetry['vessel_surface_vel_ref'] = self._vessel_surface_vel_ref()
         self._telemetry['vessel_body_ref']      = self._vessel_body_ref()
         self._telemetry['vessel_flight_bdy']    = self._vessel_flight_bdy()
         self._telemetry['vessel_flight_srf']    = self._vessel_flight_srf()
@@ -146,6 +152,18 @@ class KPFlightController(QtCore.QObject):
         
         self._telemetry['vessel_body_gravity'] = self._space_g * self._telemetry['vessel_body_mass'] / body_to_vessel_distance_sq
         self._telemetry['vessel_weight'] = self._telemetry['vessel_body_gravity'] * self._telemetry['vessel_mass']
+        
+        velocity_rel_to_surface = self._krpc.space_center.transform_direction((0,1.0,0), self._telemetry['vessel_surface_vel_ref'], self._telemetry['vessel_surface_ref'])
+        srf_velocity_rel_to_surface = vector_project_onto_plane(velocity_rel_to_surface, (1.0, 0.0, 0.0))
+        
+        # draw vectors
+        #self._krpc.space_center.clear_drawing()
+        #self._krpc.space_center.draw_direction((1.0, 0.0, 0.0), self._telemetry['vessel_surface_vel_ref'], (255, 0, 0), 10.0)
+        #self._krpc.space_center.draw_direction((0.0, 1.0, 0.0), self._telemetry['vessel_surface_vel_ref'], (0, 255, 0), 10.0)
+        #self._krpc.space_center.draw_direction((0.0, 0.0, 1.0), self._telemetry['vessel_surface_vel_ref'], (0, 0, 255), 10.0)
+        #self._krpc.space_center.draw_direction(velocity_rel_to_surface, self._telemetry['vessel_surface_ref'], (255,255,0), 10.0)
+        
+        #self._krpc.space_center.draw_direction(srf_velocity_rel_to_surface, self._telemetry['vessel_surface_ref'], (255,255,0), 10.0 * vector_length(srf_velocity_rel_to_surface))
     
         # finish telemetry update
         self.telemetry_updated.emit(self._telemetry)
@@ -167,10 +185,14 @@ class KPFlightController(QtCore.QObject):
             if self._telemetry['vessel_max_thrust'] > 0.0:
                 # set control gains
                 ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
-                self.vertical_speed_ctrl.kp = ku * 0.70
-                self.vertical_speed_ctrl.ki = ku / 3.0
-                self.vertical_speed_ctrl.kd = ku / 50.0
-            
+                #self.vertical_speed_ctrl.kp = ku * 0.70
+                #self.vertical_speed_ctrl.ki = ku / 3.0
+                #self.vertical_speed_ctrl.kd = ku / 50.0
+                self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
+                self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
+                self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
+                
+                #throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                 throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                 self._vessel_control.throttle = throttle_cmd
                 
@@ -178,8 +200,7 @@ class KPFlightController(QtCore.QObject):
         elif self._mission_program_id == 'altitude_ctrl_manual':
             if self._telemetry['vessel_max_thrust'] > 0.0:
                 vspeed_cmd = self.altitude_ctrl.update(self._telemetry['vessel_mean_altitude'])
-                self.vertical_speed_ctrl.set_point = vspeed_cmd
-                self.vertical_speed_ctrl_q.setSetpoint(vspeed_cmd)
+                self.vertical_speed_ctrl.setSetpoint(vspeed_cmd)
                 
                 throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                 self._vessel_control.throttle = throttle_cmd
@@ -191,10 +212,10 @@ class KPFlightController(QtCore.QObject):
                 
                 # set control gains
                 ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
-                self.vertical_speed_ctrl.kp = ku * 0.70
-                self.vertical_speed_ctrl.ki = ku / 3.0
-                self.vertical_speed_ctrl.kd = ku / 50.0
-                self.vertical_speed_ctrl.set_point = vspeed_cmd
+                self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
+                self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
+                self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
+                self.vertical_speed_ctrl.setSetpoint(vspeed_cmd)
                 throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                 self._vessel_control.throttle = throttle_cmd
             
@@ -203,10 +224,10 @@ class KPFlightController(QtCore.QObject):
             if self._telemetry['vessel_max_thrust'] > 0.0:
                 # set control gains
                 ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
-                self.vertical_speed_ctrl.kp = ku * 0.70
-                self.vertical_speed_ctrl.ki = ku / 3.0
-                self.vertical_speed_ctrl.kd = ku / 50.0
-                self.vertical_speed_ctrl.set_point = self._telemetry['vessel_surface_altitude'] / -12.0 - 1.0
+                self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
+                self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
+                self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
+                self.vertical_speed_ctrl.setSetpoint(self._telemetry['vessel_surface_altitude'] / -12.0 - 1.0)
             
                 throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                 self._vessel_control.throttle = throttle_cmd
@@ -214,24 +235,34 @@ class KPFlightController(QtCore.QObject):
                 
     def _set_active_program_settings(self, program_id):
         if self._mission_program_id == 'vspeed_ctrl_manual':
-            self.vertical_speed_ctrl_q.setGainsEditable(True)
-            self.vertical_speed_ctrl_q.setSetpointEditable(True)
+            self.vertical_speed_ctrl.setGainsEditable(True)
+            self.vertical_speed_ctrl.setSetpointEditable(True)
+            self.altitude_ctrl.setGainsEditable(True)
+            self.altitude_ctrl.setSetpointEditable(True)
         
         elif self._mission_program_id == 'vspeed_ctrl_auto':
-            self.vertical_speed_ctrl_q.setGainsEditable(False)
-            self.vertical_speed_ctrl_q.setSetpointEditable(True)
+            self.vertical_speed_ctrl.setGainsEditable(False)
+            self.vertical_speed_ctrl.setSetpointEditable(True)
+            self.altitude_ctrl.setGainsEditable(True)
+            self.altitude_ctrl.setSetpointEditable(True)
         
         elif self._mission_program_id == 'altitude_ctrl_manual':
-            self.vertical_speed_ctrl_q.setGainsEditable(False)
-            self.vertical_speed_ctrl_q.setSetpointEditable(False)
+            self.vertical_speed_ctrl.setGainsEditable(False)
+            self.vertical_speed_ctrl.setSetpointEditable(False)
+            self.altitude_ctrl.setGainsEditable(True)
+            self.altitude_ctrl.setSetpointEditable(True)
         
         elif self._mission_program_id == 'altitude_ctrl_auto':
-            self.vertical_speed_ctrl_q.setGainsEditable(False)
-            self.vertical_speed_ctrl_q.setSetpointEditable(False)
+            self.vertical_speed_ctrl.setGainsEditable(False)
+            self.vertical_speed_ctrl.setSetpointEditable(False)
+            self.altitude_ctrl.setGainsEditable(False)
+            self.altitude_ctrl.setSetpointEditable(True)
         
         elif self._mission_program_id == 'controlled_descent':
-            self.vertical_speed_ctrl_q.setGainsEditable(False)
-            self.vertical_speed_ctrl_q.setSetpointEditable(False)
+            self.vertical_speed_ctrl.setGainsEditable(False)
+            self.vertical_speed_ctrl.setSetpointEditable(False)
+            self.altitude_ctrl.setGainsEditable(True)
+            self.altitude_ctrl.setSetpointEditable(True)
             
         
         
@@ -274,7 +305,7 @@ class KPFlightController(QtCore.QObject):
             processing_time = time.time() - self._current_time
             sleep_time = KPFlightController.control_period - processing_time
             
-            #print("PROC: {:6.3f}, SLEEP: {:6.3f}, DT: {:6.3f}, TEL:{:6.3f}, CTL:{:6.3f}".format(processing_time, sleep_time, delta_t, telemetry_time, control_time))
+            print("PROC: {:6.3f}, SLEEP: {:6.3f}, DT: {:6.3f}, TEL:{:6.3f}, CTL:{:6.3f}".format(processing_time, sleep_time, delta_t, telemetry_time, control_time))
             
             if sleep_time > 0.0:
                 sleep(sleep_time)
@@ -345,14 +376,15 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
         'vessel_name',
         'ut',
         'vessel_body_name',
-        'vessel_vertical_speed',
         'vessel_mass',
         'vessel_body_gravity',
         'vessel_weight',
-        'vessel_thrust',
-        'vessel_throttle',
+        'vessel_forward_speed',
+        'vessel_vertical_speed',
         'vessel_mean_altitude',
         'vessel_surface_altitude',
+        'vessel_throttle',
+        'vessel_thrust',
         'vessel_max_thrust',
     ]
         
@@ -372,14 +404,15 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
             ['Vessel Name',       'n/a',      ''],
             ['Universal Time',    's',        0.0],
             ['Planet Name',       'n/a',      ''],
-            ['Vertical Speed',    'm/s',      0.0],
             ['Mass',              'kg',       0.0],
             ['Gravity',           'm/s^2',    0.0],
             ['Weight',            'N',        0.0],
-            ['Thrust',            'N',        0.0],
-            ['Throttle',          'n/a',      0.0],
+            ['Forward Speed',     'm/s',      0.0],
+            ['Vertical Speed',    'm/s',      0.0],
             ['Altitude',          'm',        0.0],
             ['Radar Altitude',    'm',        0.0],
+            ['Throttle',          'n/a',      0.0],
+            ['Thrust',            'N',        0.0],
             ['Max Thrust',        'N',        0.0],
         ]
         

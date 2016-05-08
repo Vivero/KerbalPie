@@ -66,10 +66,6 @@ class KerbalPie(QWidget):
         self._flight_ctrl.moveToThread(self._flight_thread)
         
         # gui items
-        self.flightControl_controllerSelection.addItems([
-            "Vertical Speed Controller",
-            "Altitude Controller",
-        ])
         
         # PID controller panels
         self.flightControl_tuningTabGroup = QTabWidget(parent=None)
@@ -77,12 +73,6 @@ class KerbalPie(QWidget):
             ctrl_panel = PidControllerPanel(ctrl, parent=None)
             self.flightControl_tuningTabGroup.addTab(ctrl_panel, ctrl.name)
         self.flightControl_tuningGroup.layout().addWidget(self.flightControl_tuningTabGroup)
-        
-        self.flightControl_refEdit.valueChanged.connect(self.flightControl_ref_changed)
-        self.flightControl_kpEdit.valueChanged.connect(self.flightControl_kp_changed)
-        self.flightControl_kiEdit.valueChanged.connect(self.flightControl_ki_changed)
-        self.flightControl_kdEdit.valueChanged.connect(self.flightControl_kd_changed)
-        self.flightControl_controllerSelection.currentTextChanged.connect(self.flightControl_controllerSelection_changed)
         
         # flight controller thread connections
         self._flight_thread.started.connect(self._flight_ctrl.process)
@@ -128,7 +118,6 @@ class KerbalPie(QWidget):
         pal.setColor(QPalette.Background, Qt.white)
         
         self.controllerPlotter = Plotter(parent=self.flightPlot_plotter, yMin=-2.0, yMax=2.0, timeSpan=30.0)
-        #self.controllerPlotter = Plotter(parent=self.flightPlot_plotter, yMin=70.0, yMax=100.0, timeSpan=30.0)
         self.controllerPlotter.setAutoFillBackground(True)
         self.controllerPlotter.setPalette(pal)
         self.controllerPlotter.show()
@@ -207,14 +196,6 @@ class KerbalPie(QWidget):
         if self.mission_programTableView.currentIndex().column() == 0:
             current_selection = self.mission_programTableView.currentIndex().row()
             self.mission_program_db.set_current_program_num(current_selection)
-            
-            '''
-            program_id = KPMissionProgramsDatabase.mission_program_id_lookup[current_selection]
-            if program_id in ['altitude_ctrl_manual', 'altitude_ctrl_auto']:
-                self.flightControl_refEdit.setReadOnly(True)
-            else:
-                self.flightControl_refEdit.setReadOnly(False)
-            '''
                 
         
     @pyqtSlot(dict)
@@ -240,53 +221,7 @@ class KerbalPie(QWidget):
             self.controllerPlotter.setYMax(2.0)
         elif text == 'Altitude':
             self.controllerPlotter.setYMin(70.0)
-            self.controllerPlotter.setYMax(100.0)
-            
-    @pyqtSlot('QString')
-    def flightControl_controllerSelection_changed(self, text):
-        if text == "Vertical Speed Controller":
-            self.flightControl_refEdit.setValue(self._flight_ctrl.vertical_speed_ctrl.set_point)
-            self.flightControl_kpEdit.setValue(self._flight_ctrl.vertical_speed_ctrl.kp)
-            self.flightControl_kiEdit.setValue(self._flight_ctrl.vertical_speed_ctrl.ki)
-            self.flightControl_kdEdit.setValue(self._flight_ctrl.vertical_speed_ctrl.kd)
-        elif text == "Altitude Controller":
-            self.flightControl_refEdit.setValue(self._flight_ctrl.altitude_ctrl.set_point)
-            self.flightControl_kpEdit.setValue(self._flight_ctrl.altitude_ctrl.kp)
-            self.flightControl_kiEdit.setValue(self._flight_ctrl.altitude_ctrl.ki)
-            self.flightControl_kdEdit.setValue(self._flight_ctrl.altitude_ctrl.kd)
-            
-        
-    @pyqtSlot(float)
-    def flightControl_ref_changed(self, value):
-        current_selection = self.flightControl_controllerSelection.currentText()
-        if current_selection == "Vertical Speed Controller":
-            self._flight_ctrl.vertical_speed_ctrl.set_point = value
-        elif current_selection == "Altitude Controller":
-            self._flight_ctrl.altitude_ctrl.set_point = value
-        
-    @pyqtSlot(float)
-    def flightControl_kp_changed(self, value):
-        current_selection = self.flightControl_controllerSelection.currentText()
-        if current_selection == "Vertical Speed Controller":
-            self._flight_ctrl.vertical_speed_ctrl.kp = value
-        elif current_selection == "Altitude Controller":
-            self._flight_ctrl.altitude_ctrl.kp = value
-        
-    @pyqtSlot(float)
-    def flightControl_ki_changed(self, value):
-        current_selection = self.flightControl_controllerSelection.currentText()
-        if current_selection == "Vertical Speed Controller":
-            self._flight_ctrl.vertical_speed_ctrl.ki = value
-        elif current_selection == "Altitude Controller":
-            self._flight_ctrl.altitude_ctrl.ki = value
-        
-    @pyqtSlot(float)
-    def flightControl_kd_changed(self, value):
-        current_selection = self.flightControl_controllerSelection.currentText()
-        if current_selection == "Vertical Speed Controller":
-            self._flight_ctrl.vertical_speed_ctrl.kd = value
-        elif current_selection == "Altitude Controller":
-            self._flight_ctrl.altitude_ctrl.kd = value
+            self.controllerPlotter.setYMax(200.0)
     
     
     # O V E R R I D E   M E T H O D S 

@@ -25,6 +25,7 @@ class KPMissionProgramsDatabase(QtCore.QObject):
         ('altitude_ctrl_manual',    'Altitude Control - Manual'),
         ('altitude_ctrl_auto',      'Altitude Control - Auto'),
         ('controlled_descent',      'Controlled Descent'),
+        ('forward_ctrl_manual',     'Forward Stabilizer'),
     ]
         
     mission_program_id_lookup, mission_program_title_lookup = \

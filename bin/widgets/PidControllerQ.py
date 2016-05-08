@@ -114,7 +114,7 @@ class PidControllerQ(QtCore.QObject):
         return output
     
     
-    # P R I V A T E   M E T H O D S 
+    # S L O T S 
     #===========================================================================
     
     
@@ -189,6 +189,11 @@ class PidControllerPanel(QWidget):
         self._pid.isGainsEditableChanged.connect(self.setControllerGainsEditable)
         self._pid.isSetpointEditableChanged.connect(self.setControllerSetpointEditable)
         
+        set_point_editor.valueChanged.connect(self.setSetpoint)
+        kp_editor.valueChanged.connect(self.setProportionalGain)
+        ki_editor.valueChanged.connect(self.setIntegralGain)
+        kd_editor.valueChanged.connect(self.setDerivativeGain)
+        
         
     # S L O T S 
     #===========================================================================
@@ -200,6 +205,22 @@ class PidControllerPanel(QWidget):
     @pyqtSlot(bool)
     def setControllerSetpointEditable(self, is_editable):
         self._editors[0].setReadOnly(not is_editable)
+        
+    @pyqtSlot(float)
+    def setSetpoint(self, set_point):
+        self._pid._pid.set_point = set_point
+        
+    @pyqtSlot(float)
+    def setProportionalGain(self, kp):
+        self._pid._pid.kp = kp
+        
+    @pyqtSlot(float)
+    def setIntegralGain(self, ki):
+        self._pid._pid.ki = ki
+        
+    @pyqtSlot(float)
+    def setDerivativeGain(self, kd):
+        self._pid._pid.kd = kd
         
     
         
