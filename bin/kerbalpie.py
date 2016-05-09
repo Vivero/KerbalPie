@@ -21,7 +21,7 @@ from logger import KPLogger
 from widgets.Plotter import Plotter
 from widgets.PidControllerQ import PidControllerPanel
 from flightcontrol import KPFlightDataModel, KPFlightController
-from missioncontrol import KPMissionProgramsModel, KPMissionProgramsDatabase
+from missioncontrol import MissionProgramsModel, MissionProgramsDatabase
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#  C L A S S E S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -131,9 +131,9 @@ class KerbalPie(QWidget):
         
         # mission programs table
         #-----------------------------------------------------------------------
-        self.mission_program_db = KPMissionProgramsDatabase(parent=self)
+        self.mission_program_db = MissionProgramsDatabase(parent=self)
         
-        self.mission_programs_model = KPMissionProgramsModel(parent=self)
+        self.mission_programs_model = MissionProgramsModel(mp_database=self.mission_program_db, parent=self)
         self.mission_programTableView.setModel(self.mission_programs_model)
         self.mission_programTableView.verticalHeader().setVisible(False)
         self.mission_programTableView.verticalHeader().sectionResizeMode(QHeaderView.Fixed)
