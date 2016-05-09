@@ -11,6 +11,4 @@ Requirements:
 
 To start, navigate to `\bin`, and run:
 
-'''
-> python kerbalpie.py
-'''
+    > python kerbalpie.py
