@@ -7,7 +7,7 @@ from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal, pyq
 
 from kptools import PidController, vector_dot_product, vector_length, vector_normalize, vector_project_onto_plane
 from logger import KPLogger
-from missioncontrol import KPMissionProgramsDatabase
+from missioncontrol import MissionProgram, MissionProgramsDatabase
 from widgets.PidControllerQ import PidControllerQ
 
 
@@ -21,7 +21,7 @@ from widgets.PidControllerQ import PidControllerQ
 class KPFlightController(QtCore.QObject):
 
     subsys = 'CONTROL'
-    control_period = 0.050
+    control_period = 0.100
         
     # S I G N A L S 
     #===========================================================================
@@ -61,9 +61,8 @@ class KPFlightController(QtCore.QObject):
         self.controllers.append(self.vertical_speed_ctrl)
         self.controllers.append(self.altitude_ctrl)
         
-        # flight control program
-        self._mission_program_id = KPMissionProgramsDatabase.mission_program_id_lookup[0]
-        
+        # mission program
+        self._mission_program = None
         
         
         
@@ -112,9 +111,9 @@ class KPFlightController(QtCore.QObject):
         
         # draw vectors
         self._krpc.space_center.clear_drawing()
-        self._krpc.space_center.draw_direction((1.0, 0.0, 0.0), self._vessel_surface_vel_ref(), (255, 0, 0), 10.0)
-        self._krpc.space_center.draw_direction((0.0, 1.0, 0.0), self._vessel_surface_vel_ref(), (0, 255, 0), 10.0)
-        self._krpc.space_center.draw_direction((0.0, 0.0, 1.0), self._vessel_surface_vel_ref(), (0, 0, 255), 10.0)
+        #self._krpc.space_center.draw_direction((1.0, 0.0, 0.0), self._vessel_surface_vel_ref(), (255, 0, 0), 10.0)
+        #self._krpc.space_center.draw_direction((0.0, 1.0, 0.0), self._vessel_surface_vel_ref(), (0, 255, 0), 10.0)
+        #self._krpc.space_center.draw_direction((0.0, 0.0, 1.0), self._vessel_surface_vel_ref(), (0, 0, 255), 10.0)
         
         
         self._log('Tracking vessel "{:s}"'.format(self._vessel.name))
@@ -171,99 +170,76 @@ class KPFlightController(QtCore.QObject):
         
         
     def _control_update(self):
-        if self._mission_program_id == 'full_manual':
-            return
-            
-        # Control vertical speed without automatic tuning of controller gains
-        elif self._mission_program_id == 'vspeed_ctrl_manual':
-            if self._telemetry['vessel_max_thrust'] > 0.0:
-                throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
-                self._vessel_control.throttle = throttle_cmd
-            
-        # Control vertical speed with automatic tuning of controller gains
-        elif self._mission_program_id == 'vspeed_ctrl_auto':
-            if self._telemetry['vessel_max_thrust'] > 0.0:
-                # set control gains
-                ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
-                #self.vertical_speed_ctrl.kp = ku * 0.70
-                #self.vertical_speed_ctrl.ki = ku / 3.0
-                #self.vertical_speed_ctrl.kd = ku / 50.0
-                self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
-                self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
-                self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
+        if self._mission_program is not None:
+            mp_id = self._mission_program.id
+    
+            if mp_id == 'full_manual':
+                return
                 
-                #throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
-                throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
-                self._vessel_control.throttle = throttle_cmd
+            # Control vertical speed without automatic tuning of controller gains
+            elif mp_id == 'vspeed_manual':
+                if self._telemetry['vessel_max_thrust'] > 0.0:
+                    throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
+                    self._vessel_control.throttle = throttle_cmd
                 
-        # Control altitude without automatic tuning of controller gains
-        elif self._mission_program_id == 'altitude_ctrl_manual':
-            if self._telemetry['vessel_max_thrust'] > 0.0:
-                vspeed_cmd = self.altitude_ctrl.update(self._telemetry['vessel_mean_altitude'])
-                self.vertical_speed_ctrl.setSetpoint(vspeed_cmd)
+            # Control vertical speed with automatic tuning of controller gains
+            elif mp_id == 'vspeed_auto':
+                if self._telemetry['vessel_max_thrust'] > 0.0:
+                    # set control gains
+                    ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
+                    #self.vertical_speed_ctrl.kp = ku * 0.70
+                    #self.vertical_speed_ctrl.ki = ku / 3.0
+                    #self.vertical_speed_ctrl.kd = ku / 50.0
+                    self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
+                    self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
+                    self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
+                    
+                    #throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
+                    throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
+                    self._vessel_control.throttle = throttle_cmd
+                    
+            # Control altitude without automatic tuning of controller gains
+            elif mp_id == 'altitude_manual':
+                if self._telemetry['vessel_max_thrust'] > 0.0:
+                    vspeed_cmd = self.altitude_ctrl.update(self._telemetry['vessel_mean_altitude'])
+                    self.vertical_speed_ctrl.setSetpoint(vspeed_cmd)
+                    
+                    throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
+                    self._vessel_control.throttle = throttle_cmd
+                    
+            # Control altitude with automatic tuning of speed controller gains
+            elif mp_id == 'altitude_auto':
+                if self._telemetry['vessel_max_thrust'] > 0.0:
+                    vspeed_cmd = self.altitude_ctrl.update(self._telemetry['vessel_mean_altitude'])
+                    
+                    # set control gains
+                    ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
+                    self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
+                    self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
+                    self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
+                    self.vertical_speed_ctrl.setSetpoint(vspeed_cmd)
+                    throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
+                    self._vessel_control.throttle = throttle_cmd
                 
-                throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
-                self._vessel_control.throttle = throttle_cmd
+            # Controlled descent that varies vertical speed according to altitude
+            elif mp_id == 'controlled_descent':
+                if self._telemetry['vessel_max_thrust'] > 0.0:
+                    # set control gains
+                    ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
+                    self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
+                    self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
+                    self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
+                    self.vertical_speed_ctrl.setSetpoint(self._telemetry['vessel_surface_altitude'] / -12.0 - 1.0)
                 
-        # Control altitude with automatic tuning of speed controller gains
-        elif self._mission_program_id == 'altitude_ctrl_auto':
-            if self._telemetry['vessel_max_thrust'] > 0.0:
-                vspeed_cmd = self.altitude_ctrl.update(self._telemetry['vessel_mean_altitude'])
-                
-                # set control gains
-                ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
-                self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
-                self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
-                self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
-                self.vertical_speed_ctrl.setSetpoint(vspeed_cmd)
-                throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
-                self._vessel_control.throttle = throttle_cmd
-            
-        # Controlled descent that varies vertical speed according to altitude
-        elif self._mission_program_id == 'controlled_descent':
-            if self._telemetry['vessel_max_thrust'] > 0.0:
-                # set control gains
-                ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
-                self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
-                self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
-                self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
-                self.vertical_speed_ctrl.setSetpoint(self._telemetry['vessel_surface_altitude'] / -12.0 - 1.0)
-            
-                throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
-                self._vessel_control.throttle = throttle_cmd
+                    throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
+                    self._vessel_control.throttle = throttle_cmd
                 
                 
-    def _set_active_program_settings(self, program_id):
-        if self._mission_program_id == 'vspeed_ctrl_manual':
-            self.vertical_speed_ctrl.setGainsEditable(True)
-            self.vertical_speed_ctrl.setSetpointEditable(True)
-            self.altitude_ctrl.setGainsEditable(True)
-            self.altitude_ctrl.setSetpointEditable(True)
-        
-        elif self._mission_program_id == 'vspeed_ctrl_auto':
-            self.vertical_speed_ctrl.setGainsEditable(False)
-            self.vertical_speed_ctrl.setSetpointEditable(True)
-            self.altitude_ctrl.setGainsEditable(True)
-            self.altitude_ctrl.setSetpointEditable(True)
-        
-        elif self._mission_program_id == 'altitude_ctrl_manual':
-            self.vertical_speed_ctrl.setGainsEditable(False)
-            self.vertical_speed_ctrl.setSetpointEditable(False)
-            self.altitude_ctrl.setGainsEditable(True)
-            self.altitude_ctrl.setSetpointEditable(True)
-        
-        elif self._mission_program_id == 'altitude_ctrl_auto':
-            self.vertical_speed_ctrl.setGainsEditable(False)
-            self.vertical_speed_ctrl.setSetpointEditable(False)
-            self.altitude_ctrl.setGainsEditable(False)
-            self.altitude_ctrl.setSetpointEditable(True)
-        
-        elif self._mission_program_id == 'controlled_descent':
-            self.vertical_speed_ctrl.setGainsEditable(False)
-            self.vertical_speed_ctrl.setSetpointEditable(False)
-            self.altitude_ctrl.setGainsEditable(True)
-            self.altitude_ctrl.setSetpointEditable(True)
-            
+    def _set_active_program_settings(self):
+        self.vertical_speed_ctrl.setSetpointEditable(self._mission_program.settings['vertical_speed_controller_setpoint_editable'])
+        self.vertical_speed_ctrl.setGainsEditable(self._mission_program.settings['vertical_speed_controller_gains_editable'])
+        self.altitude_ctrl.setSetpointEditable(self._mission_program.settings['altitude_controller_setpoint_editable'])
+        self.altitude_ctrl.setGainsEditable(self._mission_program.settings['altitude_controller_gains_editable'])
         
         
     
@@ -305,21 +281,22 @@ class KPFlightController(QtCore.QObject):
             processing_time = time.time() - self._current_time
             sleep_time = KPFlightController.control_period - processing_time
             
-            print("PROC: {:6.3f}, SLEEP: {:6.3f}, DT: {:6.3f}, TEL:{:6.3f}, CTL:{:6.3f}".format(processing_time, sleep_time, delta_t, telemetry_time, control_time))
+            #print("PROC: {:6.3f}, SLEEP: {:6.3f}, DT: {:6.3f}, TEL:{:6.3f}, CTL:{:6.3f}".format(processing_time, sleep_time, delta_t, telemetry_time, control_time))
             
             if sleep_time > 0.0:
                 sleep(sleep_time)
+            else:
+                self._log_warning('Processing overrun: Control time = {:.1f} ms, overrun by {:.1f} ms'.format(processing_time * 1000.0, sleep_time * -1000.0))
             
             
         # thread termination
         self._log('Flight control thread terminating...')
         self.finished.emit()
         
-    @pyqtSlot(int)
-    def set_active_program(self, program_num):
-        if program_num < KPMissionProgramsDatabase.num_mission_programs:
-            self._mission_program_id = KPMissionProgramsDatabase.mission_program_id_lookup[program_num]
-            self._set_active_program_settings(self._mission_program_id)
+    @pyqtSlot(MissionProgram)
+    def set_active_program(self, program):
+        self._mission_program = program
+        self._set_active_program_settings()
                 
         
     @pyqtSlot()
@@ -359,6 +336,9 @@ class KPFlightController(QtCore.QObject):
     #===========================================================================
     def _log(self, log_message, log_type='info', log_data=None):
         KPLogger.log(KPFlightController.subsys, log_message, log_type, log_data)
+        
+    def _log_warning(self, log_message, log_data=None):
+        KPLogger.log_warning(KPFlightController.subsys, log_message, log_data)
         
     def _log_exception(self, log_message, log_exception):
         KPLogger.log_exception(KPFlightController.subsys, log_message, log_exception)
