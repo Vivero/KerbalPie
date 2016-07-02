@@ -25,6 +25,19 @@ def vector_project_onto_plane(x, n):
     d = vector_dot_product(x, n) / vector_length(n)
     p = [d * n_normalized[i] for i in range(len(n))]
     return [x[i] - p[i] for i in range(len(x))]
+    
+def clamp(val_min, value, val_max):
+    return max(val_min, min(val_max, value))
+    
+def map_value_to_scale(value, val_min, val_max, scale_min, scale_max):
+    scaled_value = (value - val_min) / (val_max - val_min) * (scale_max - scale_min) + scale_min
+    return clamp(min(scale_min, scale_max), scaled_value, max(scale_min, scale_max))
+    
+def mean(values_list):
+    if len(values_list) > 0:
+        return sum(values_list) / len(values_list)
+    else:
+        return 0.0
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#  C L A S S E S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -69,17 +82,17 @@ class PidController():
         error = self.set_point - current_value
         
         # proportional term
-        p_value = self.kp * error
+        self._p_value = self.kp * error
         
         # integral term
-        i_value = self._integral
+        self._i_value = self._integral
         
         # derivative term
         #d_value = self.kd * (error - self._prev_error) / delta_t
-        d_value = -self.kd * (current_value - self._prev_value) / delta_t # slightly better transient response
+        self._d_value = -self.kd * (current_value - self._prev_value) / delta_t # slightly better transient response
         
         # output signal
-        v = p_value + i_value + d_value
+        v = self._p_value + self._i_value + self._d_value
         u = max(self.output_min, min(self.output_max, v))
         
         self._integral += self.ki * error * delta_t
@@ -90,7 +103,7 @@ class PidController():
         self._previous_time = current_time
         
         # debug output
-        #print('p = {:8.3f}, i = {:8.3f}, d = {:8.3f}, PID = {:8.3f}'.format(p_value, i_value, d_value, u))
+        #print('p = {:8.3f}, i = {:8.3f}, d = {:8.3f}, PID = {:8.3f}'.format(self._p_value, self._i_value, self._d_value, u))
         
         return u
         

@@ -1,0 +1,1 @@
+Log files get generated in this directory.

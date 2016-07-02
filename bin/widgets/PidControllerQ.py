@@ -14,10 +14,13 @@ from time import sleep
 
 from logger import KPLogger
 from kptools import PidController
+from widgets.Plot2D import *
 
 from PyQt5 import QtCore
 from PyQt5.QtCore import QVariant, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtWidgets import QDoubleSpinBox, QGridLayout, QLabel, QPushButton, QSizePolicy, QWidget
+from PyQt5.QtGui import QPen
+from PyQt5.QtWidgets import QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel
+from PyQt5.QtWidgets import QPushButton, QSizePolicy, QWidget
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#  C L A S S E S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -108,6 +111,15 @@ class PidControllerQ(QtCore.QObject):
     def getSetpointEditable(self):
         return self._isSetpointEditable
         
+    def getProportionalValue(self):
+        return self._pid._p_value
+        
+    def getIntegralValue(self):
+        return self._pid._i_value
+        
+    def getDerivativeValue(self):
+        return self._pid._d_value
+        
     def update(self, current_value):
         output = self._pid.update(current_value)
         self.outputChanged.emit(output)
@@ -143,6 +155,7 @@ class PidControllerPanel(QWidget):
     def __init__(self, pid_controller, **kwds):
         super(PidControllerPanel, self).__init__(**kwds)
         
+        # PidControllerQ object
         self._pid = pid_controller
         
         # setup widgets
@@ -151,20 +164,23 @@ class PidControllerPanel(QWidget):
         ki_label = QLabel("Ki")
         kd_label = QLabel("Kd")
         
-        self._labels = [set_point_label, kp_label, ki_label, kd_label]
-        for label in self._labels:
-            label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        
         set_point_editor = QDoubleSpinBox()
         kp_editor = QDoubleSpinBox()
         ki_editor = QDoubleSpinBox()
         kd_editor = QDoubleSpinBox()
         
+		# set labels' alignment
+        self._labels = [set_point_label, kp_label, ki_label, kd_label]
+        for label in self._labels:
+            label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        
+		# set spinbox values to gains
         set_point_editor.setValue(self._pid.getSetpoint())
         kp_editor.setValue(self._pid.getProportionalGain())
         ki_editor.setValue(self._pid.getIntegralGain())
         kd_editor.setValue(self._pid.getDerivativeGain())
         
+		# spinbox settings
         self._editors = [set_point_editor, kp_editor, ki_editor, kd_editor]
         for editor in self._editors:
             editor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -173,15 +189,43 @@ class PidControllerPanel(QWidget):
             editor.setMinimum(-1000.0)
             editor.setMaximum(1000.0)
         
+		# populate a grid with gain labels/editors
         grid_layout = QGridLayout()
         for idx in range(len(self._labels)):
             grid_layout.addWidget(self._labels[idx], idx, 0)
         for idx in range(len(self._editors)):
             grid_layout.addWidget(self._editors[idx], idx, 1)
+
+        # create widget with gain controls
+        gain_controls_widget = QWidget()
+        gain_controls_widget.setLayout(grid_layout)
+
+        # create widget for gain plotter
+        self._pid_plotter = Plot2DTime(
+            timeSpan=30.0,
+            yMin=-0.5,
+            yMax=0.5,
+            yOriginValue=0.0,
+            xTickInterval=5.0,
+            yTickInterval=0.2,
+            labelFont=QFont("Segoe UI", 8),
+            refreshRate=0.1)
+        self._pid_plotter.setMinimumWidth(250)
+        self._pid_plotter.setPlotPen(0, QPen(Qt.red, 1.0))
+        self._pid_plotter.setPlotPen(1, QPen(Qt.green, 1.0))
+        self._pid_plotter.setPlotPen(2, QPen(Qt.blue, 1.0))
+        for i in range(3):
+            self._pid_plotter.setPlotDrawMethod(i, 'line')
         
-        self.setLayout(grid_layout)
+        # set the layout for the PID panel
+        panel_layout = QHBoxLayout()
+        panel_layout.addWidget(gain_controls_widget)
+        panel_layout.addWidget(self._pid_plotter)
+        
+        self.setLayout(panel_layout)
         
         # connect signals
+        self._pid.outputChanged.connect(self.pidOutputChanged)
         self._pid.setpointChanged.connect(set_point_editor.setValue)
         self._pid.kpChanged.connect(kp_editor.setValue)
         self._pid.kiChanged.connect(ki_editor.setValue)
@@ -193,6 +237,9 @@ class PidControllerPanel(QWidget):
         kp_editor.valueChanged.connect(self.setProportionalGain)
         ki_editor.valueChanged.connect(self.setIntegralGain)
         kd_editor.valueChanged.connect(self.setDerivativeGain)
+        
+    def update(self):
+        self._pid_plotter.update()
         
         
     # S L O T S 
@@ -221,6 +268,12 @@ class PidControllerPanel(QWidget):
     @pyqtSlot(float)
     def setDerivativeGain(self, kd):
         self._pid._pid.kd = kd
+        
+    @pyqtSlot(float)
+    def pidOutputChanged(self, pidOutput):
+        self._pid_plotter.updatePlot(0, self._pid.getProportionalValue())
+        self._pid_plotter.updatePlot(1, self._pid.getIntegralValue())
+        self._pid_plotter.updatePlot(2, self._pid.getDerivativeValue())
         
     
         

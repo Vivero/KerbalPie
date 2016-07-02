@@ -5,7 +5,7 @@ from time import sleep
 from PyQt5 import QtCore
 from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal, pyqtSlot
 
-from kptools import PidController, vector_dot_product, vector_length, vector_normalize, vector_project_onto_plane
+from kptools import *
 from logger import KPLogger
 from missioncontrol import MissionProgram, MissionProgramsDatabase
 from widgets.PidControllerQ import PidControllerQ
@@ -21,7 +21,9 @@ from widgets.PidControllerQ import PidControllerQ
 class KPFlightController(QtCore.QObject):
 
     subsys = 'CONTROL'
-    control_period = 0.100
+    short_term_period = 0.100
+    long_term_period = 0.100
+    xlong_term_period = 10.0
         
     # S I G N A L S 
     #===========================================================================
@@ -54,15 +56,47 @@ class KPFlightController(QtCore.QObject):
         # flight data
         self._telemetry = {}
         
+        # signals data
+        self._signals = {}
+        self._signals_task = 0
+        self._signals_update_time = time.time()
+        self._radar_resolution = 20
+        
         # flight controllers
         self.vertical_speed_ctrl = PidControllerQ(kp=0.181, ki=0.09, kd=0.005, output_min=0.0, output_max=1.0, set_point=0.0, name="Vertical Speed Controller", parent=self)
-        self.altitude_ctrl = PidControllerQ(kp=1.0, ki=0.005, kd=0.005, output_min=-5.0, output_max=5.0, set_point=85.0, name="Altitude Controller", parent=self)
+        self.altitude_ctrl = PidControllerQ(kp=1.5, ki=0.005, kd=0.005, output_min=-5.0, output_max=5.0, set_point=85.0, name="Altitude Controller", parent=self)
         self.controllers = []
         self.controllers.append(self.vertical_speed_ctrl)
         self.controllers.append(self.altitude_ctrl)
         
         # mission program
         self._mission_program = None
+        
+        # timing data
+        self._process_timings = {}
+        self._process_timings['st_time'] = []
+        self._process_timings['lt_time'] = []
+        self._process_timings['xlt_time'] = []
+        
+        # initialize data
+        self._telemetry['st_time'] = 0.0
+        self._telemetry['lt_time'] = 0.0
+        self._telemetry['xlt_time'] = 0.0
+        self._telemetry['surface_height_map'] = [[0.0 for x in range(self._radar_resolution)] for y in range(self._radar_resolution)]
+        
+        # initialize control timers
+        self._short_term_scheduler = QTimer()
+        self._long_term_scheduler = QTimer()
+        self._xlong_term_scheduler = QTimer()
+        
+        self._short_term_scheduler.timeout.connect(self.short_term_processing)
+        self._short_term_scheduler.start(KPFlightController.short_term_period * 1000.0)
+        
+        self._long_term_scheduler.timeout.connect(self.long_term_processing)
+        self._long_term_scheduler.start(KPFlightController.long_term_period * 1000.0)
+        
+        self._xlong_term_scheduler.timeout.connect(self.xlong_term_processing)
+        self._xlong_term_scheduler.start(KPFlightController.xlong_term_period * 1000.0)
         
         
         
@@ -107,13 +141,8 @@ class KPFlightController(QtCore.QObject):
         self._vessel_throttle           = self._krpc.add_stream(getattr, self._vessel_control, 'throttle')
         self._vessel_mean_altitude      = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'mean_altitude')
         self._vessel_surface_altitude   = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'surface_altitude')
-        
-        
-        # draw vectors
-        self._krpc.space_center.clear_drawing()
-        #self._krpc.space_center.draw_direction((1.0, 0.0, 0.0), self._vessel_surface_vel_ref(), (255, 0, 0), 10.0)
-        #self._krpc.space_center.draw_direction((0.0, 1.0, 0.0), self._vessel_surface_vel_ref(), (0, 255, 0), 10.0)
-        #self._krpc.space_center.draw_direction((0.0, 0.0, 1.0), self._vessel_surface_vel_ref(), (0, 0, 255), 10.0)
+        self._vessel_latitude           = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'latitude')
+        self._vessel_longitude          = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'longitude')
         
         
         self._log('Tracking vessel "{:s}"'.format(self._vessel.name))
@@ -145,6 +174,11 @@ class KPFlightController(QtCore.QObject):
         self._telemetry['vessel_throttle']          = self._vessel_throttle()
         self._telemetry['vessel_mean_altitude']     = self._vessel_mean_altitude()
         self._telemetry['vessel_surface_altitude']  = self._vessel_surface_altitude()
+        self._telemetry['vessel_latitude']          = self._vessel_latitude()
+        self._telemetry['vessel_longitude']         = self._vessel_longitude()
+        self._telemetry['vessel_surface_height']    = self._vessel_body().surface_height(
+            self._telemetry['vessel_latitude'],
+            self._telemetry['vessel_longitude'])
         
         # compute telemetry parameters
         body_to_vessel_distance_sq = self._telemetry['vessel_position_bdy'][0] ** 2 + self._telemetry['vessel_position_bdy'][1] ** 2 + self._telemetry['vessel_position_bdy'][2] ** 2
@@ -155,16 +189,7 @@ class KPFlightController(QtCore.QObject):
         velocity_rel_to_surface = self._krpc.space_center.transform_direction((0,1.0,0), self._telemetry['vessel_surface_vel_ref'], self._telemetry['vessel_surface_ref'])
         srf_velocity_rel_to_surface = vector_project_onto_plane(velocity_rel_to_surface, (1.0, 0.0, 0.0))
         
-        # draw vectors
-        #self._krpc.space_center.clear_drawing()
-        #self._krpc.space_center.draw_direction((1.0, 0.0, 0.0), self._telemetry['vessel_surface_vel_ref'], (255, 0, 0), 10.0)
-        #self._krpc.space_center.draw_direction((0.0, 1.0, 0.0), self._telemetry['vessel_surface_vel_ref'], (0, 255, 0), 10.0)
-        #self._krpc.space_center.draw_direction((0.0, 0.0, 1.0), self._telemetry['vessel_surface_vel_ref'], (0, 0, 255), 10.0)
-        #self._krpc.space_center.draw_direction(velocity_rel_to_surface, self._telemetry['vessel_surface_ref'], (255,255,0), 10.0)
-        
-        #self._krpc.space_center.draw_direction(srf_velocity_rel_to_surface, self._telemetry['vessel_surface_ref'], (255,255,0), 10.0 * vector_length(srf_velocity_rel_to_surface))
-    
-        # finish telemetry update
+        # finish update
         self.telemetry_updated.emit(self._telemetry)
         
         
@@ -187,14 +212,10 @@ class KPFlightController(QtCore.QObject):
                 if self._telemetry['vessel_max_thrust'] > 0.0:
                     # set control gains
                     ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
-                    #self.vertical_speed_ctrl.kp = ku * 0.70
-                    #self.vertical_speed_ctrl.ki = ku / 3.0
-                    #self.vertical_speed_ctrl.kd = ku / 50.0
                     self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
                     self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
                     self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
                     
-                    #throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                     throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                     self._vessel_control.throttle = throttle_cmd
                     
@@ -233,6 +254,52 @@ class KPFlightController(QtCore.QObject):
                 
                     throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                     self._vessel_control.throttle = throttle_cmd
+                    
+                    
+                    
+                    
+    def _signals_update(self):
+    
+        if 'vessel_latitude' in self._telemetry.keys() and 'vessel_longitude' in self._telemetry.keys():
+            
+            '''
+            for y in range(s):
+                longitude = self._telemetry['vessel_longitude'] + float(y - s / 2) * delta_lat
+                for x in range(s):
+                    latitude = self._telemetry['vessel_latitude'] + float(x - s / 2) * delta_lat
+                    #self._telemetry['surface_height_map'][x][y] = \
+                    #    self._vessel_body().surface_height(latitude, longitude) - self._telemetry['vessel_surface_height']
+                    self._telemetry['surface_height_map'][x][y] = 0.0
+            '''
+            
+            
+            delta_lat = 0.005
+            num_radar_tasks = self._radar_resolution * self._radar_resolution
+            
+            if self._signals_task >= 0 and self._signals_task < num_radar_tasks:
+                x_idx = int(self._signals_task % self._radar_resolution)
+                y_idx = int(self._signals_task / self._radar_resolution)
+                
+                latitude = self._telemetry['vessel_latitude'] + float(y_idx - self._radar_resolution / 2) * delta_lat
+                longitude = self._telemetry['vessel_longitude'] + float(x_idx - self._radar_resolution / 2) * delta_lat
+                
+                self._telemetry['surface_height_map'][x_idx][y_idx] = \
+                    self._telemetry['vessel_surface_height'] - self._vessel_body().surface_height(latitude, longitude)
+                    
+            self._signals_task += 1
+            if self._signals_task >= num_radar_tasks:
+                self._signals_task = 0
+                
+                
+                for y in self._telemetry['surface_height_map']:
+                    alt_line = []
+                    for x in y:
+                        alt_line.append('{:.2f}'.format(x))
+                    print(' '.join(alt_line))
+                
+                #for a in self._telemetry['surface_height_map'][int(self._radar_resolution / 2)]:
+                    #print("{:.3f}".format(a))
+                
                 
                 
     def _set_active_program_settings(self):
@@ -255,38 +322,83 @@ class KPFlightController(QtCore.QObject):
             except ConnectionResetError as re:
                 self._log_exception('KRPC connection reset by host', re)
                 self.krpc_disconnect()
+                
+                
+    def _record_timings(self, process_key, process_start_time):
+        process_time = time.time() - process_start_time
+        #self._telemetry[process_key] = process_time
+        self._process_timings[process_key].append(process_time)
+        if len(self._process_timings[process_key]) > 20:
+            self._process_timings[process_key] = self._process_timings[process_key][1:]
+            
+        self._telemetry[process_key] = mean(self._process_timings[process_key])
+            
+        return process_time
+        
     
     
     # S L O T S 
     #===========================================================================
     @pyqtSlot()
+    def short_term_processing(self):
+        start_time = time.time()
+        #--
+        
+        if self.krpc_is_connected:
+            self._telemetry_update()
+            self._control_update()
+        
+        #--
+        process_time = self._record_timings('st_time', start_time)
+        if process_time > KPFlightController.short_term_period:
+            self._log_warning('ST processing overrun: Process time = {:.1f} ms, overrun by {:.1f} ms'.format(
+                process_time * 1000.0, (process_time - KPFlightController.short_term_period) * 1000.0))
+            
+        
+    @pyqtSlot()
+    def long_term_processing(self):
+        start_time = time.time()
+        #--
+        
+        if self.krpc_is_connected:
+            self._signals_update()
+        
+        #--
+        process_time = self._record_timings('lt_time', start_time)
+        if process_time > KPFlightController.long_term_period:
+            self._log_warning('LT processing overrun: Process time = {:.1f} ms, overrun by {:.1f} ms'.format(
+                process_time * 1000.0, (process_time - KPFlightController.long_term_period) * 1000.0))
+        
+    @pyqtSlot()
+    def xlong_term_processing(self):
+        start_time = time.time()
+        #--
+        
+        if self.krpc_is_connected:
+            self._krpc_heartbeat()
+        
+        #--
+        process_time = self._record_timings('xlt_time', start_time)
+    
+    @pyqtSlot()
     def process(self):
         while not self.terminate:
-            self._current_time = time.time()
-            delta_t = self._current_time - self._previous_time
+            #self._current_time = time.time()
+            #delta_t = self._current_time - self._previous_time
             
-            # service KRPC
-            telemetry_time = 0.0
-            control_time = 0.0
-            if self.krpc_is_connected:
-                self._telemetry_update()
-                self._control_update()
-                self._krpc_heartbeat()
-                
             # service Qt events
             QCoreApplication.processEvents()
             
             # sleep to next period
-            self._previous_time = self._current_time
-            processing_time = time.time() - self._current_time
-            sleep_time = KPFlightController.control_period - processing_time
+            #self._previous_time = self._current_time
+            #processing_time = time.time() - self._current_time
+            #sleep_time = KPFlightController.control_period - processing_time
             
-            #print("PROC: {:6.3f}, SLEEP: {:6.3f}, DT: {:6.3f}, TEL:{:6.3f}, CTL:{:6.3f}".format(processing_time, sleep_time, delta_t, telemetry_time, control_time))
             
-            if sleep_time > 0.0:
-                sleep(sleep_time)
-            else:
-                self._log_warning('Processing overrun: Control time = {:.1f} ms, overrun by {:.1f} ms'.format(processing_time * 1000.0, sleep_time * -1000.0))
+            #if sleep_time > 0.0:
+            #    sleep(sleep_time)
+            #else:
+            #    self._log_warning('Processing overrun: Control time = {:.1f} ms, overrun by {:.1f} ms'.format(processing_time * 1000.0, sleep_time * -1000.0))
             
             
         # thread termination
@@ -366,6 +478,11 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
         'vessel_throttle',
         'vessel_thrust',
         'vessel_max_thrust',
+        'vessel_latitude',
+        'vessel_longitude',
+        'st_time',
+        'lt_time',
+        'xlt_time',
     ]
         
     # S I G N A L S 
@@ -394,6 +511,11 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
             ['Throttle',          'n/a',      0.0],
             ['Thrust',            'N',        0.0],
             ['Max Thrust',        'N',        0.0],
+            ['Latitude',          'deg',      0.0],
+            ['Longitude',         'deg',      0.0],
+            ['ST Process Time',   's',        0.0],
+            ['LT Process Time',   's',        0.0],
+            ['XLT Process Time',  's',        0.0],
         ]
         
         

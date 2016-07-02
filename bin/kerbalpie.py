@@ -14,14 +14,16 @@ else:
 
 from PyQt5 import QtCore, uic
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QColor, QPalette
-from PyQt5.QtWidgets import QAbstractItemView, QApplication, QHeaderView, QTabWidget, QWidget
+from PyQt5.QtGui import QColor, QPalette, QPen
+from PyQt5.QtWidgets import QAbstractItemView, QApplication, QHeaderView
+from PyQt5.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
 from logger import KPLogger
-from widgets.Plotter import Plotter
+from widgets.Plot2D import *
 from widgets.PidControllerQ import PidControllerPanel
 from flightcontrol import KPFlightDataModel, KPFlightController
 from missioncontrol import MissionProgramsModel, MissionProgramsDatabase
+from kptools import *
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#  C L A S S E S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -69,9 +71,11 @@ class KerbalPie(QWidget):
         
         # PID controller panels
         self.flightControl_tuningTabGroup = QTabWidget(parent=None)
+        self.flightControl_pidControllerPanels = []
         for ctrl in self._flight_ctrl.controllers:
             ctrl_panel = PidControllerPanel(ctrl, parent=None)
             self.flightControl_tuningTabGroup.addTab(ctrl_panel, ctrl.name)
+            self.flightControl_pidControllerPanels.append(ctrl_panel)
         self.flightControl_tuningGroup.layout().addWidget(self.flightControl_tuningTabGroup)
         
         # flight controller thread connections
@@ -117,16 +121,20 @@ class KerbalPie(QWidget):
         pal = QPalette(self.palette())
         pal.setColor(QPalette.Background, Qt.white)
         
-        self.controllerPlotter = Plotter(parent=self.flightPlot_plotter, yMin=-2.0, yMax=2.0, timeSpan=30.0)
-        self.controllerPlotter.setAutoFillBackground(True)
-        self.controllerPlotter.setPalette(pal)
-        self.controllerPlotter.show()
+        self.controllerPlotter = Plot2DTime(
+            timeSpan=30.0,
+            yMin=-2.0,
+            yMax=2.0,
+            yOriginValue=0.0,
+            xTickInterval=5.0,
+            yTickInterval=0.5,
+            labelFont=QFont("Segoe UI", 10),
+            refreshRate=0.1)
+        self.controllerPlotter.setPlotDrawMethod(0, 'line')
+        
+        self.flightPlot_plotGroup.layout().addWidget(self.controllerPlotter)
         
         self.flightPlot_selection.currentTextChanged.connect(self.flightPlot_selection_changed)
-        
-        self.plotterUpdateTimer = QTimer(self)
-        self.plotterUpdateTimer.timeout.connect(self.update_plots)
-        self.plotterUpdateTimer.start(33.333)
         
         
         # mission programs table
@@ -150,13 +158,40 @@ class KerbalPie(QWidget):
         # automatically start KRPC connection
         QTimer.singleShot(200, self.krpc_connectionButton_clicked)
         
-    
+        
+        # debug
+        #-----------------------------------------------------------------------
+        
+        self.radarPlotter = Plot2D(
+            xMin=-1.0,
+            xMax=1.0,
+            yMin=-1.0,
+            yMax=1.0,
+            xOriginValue=0.0,
+            yOriginValue=0.0,
+            xTickInterval=0.1,
+            yTickInterval=0.1)
+            
+        radarLayout = QVBoxLayout()
+        radarLayout.addWidget(self.radarPlotter)
+        self.radarTab.setLayout(radarLayout)
+        
+        self._radarPlotColorBins = 30
+        radarPlotColor = QColor()
+        for i in range(self._radarPlotColorBins):
+            hue = map_value_to_scale(float(i), 0.0, float(self._radarPlotColorBins), 0.0, 0.2) 
+            radarPlotColor.setHsvF(hue, 1.0, 1.0)
+            self.radarPlotter.setPlotPen(i, QPen(radarPlotColor, 20.0, Qt.SolidLine, Qt.RoundCap))
+                
+        self.radarPlotter.update()
+           
     
     # S L O T S 
     #===========================================================================
     @pyqtSlot()
     def update_plots(self):
-        self.controllerPlotter.update()
+        pass
+            
     
     @pyqtSlot()
     def krpc_client_connected(self):
@@ -212,6 +247,36 @@ class KerbalPie(QWidget):
             self.controllerPlotter.updatePlot(0, telemetry_dict['vessel_vertical_speed'])
         elif plotter_current_selection == 'Altitude':
             self.controllerPlotter.updatePlot(0, telemetry_dict['vessel_mean_altitude'])
+            
+        # radar
+        self.radarPlotter.clearPlots()
+        
+        #surface_height_at_vessel = telemetry_dict['vessel_surface_height']
+        radar_altitude_map = telemetry_dict['surface_height_map']
+        
+        #print(radar_altitude_map)
+        
+        radar_altitude_map_min = min([min(a) for a in radar_altitude_map])
+        radar_altitude_map_max = max([max(a) for a in radar_altitude_map])
+        
+        if radar_altitude_map_min == 0.0 and radar_altitude_map_max == 0.0:
+            radar_altitude_map_min = -1.0
+            radar_altitude_map_max = 1.0
+        
+        s = len(telemetry_dict['surface_height_map'][0])
+        for y in range(s):
+            for x in range(s):
+                x_val = map_value_to_scale(float(x) + 0.5, 0.0, s, -1.0, 1.0)
+                y_val = map_value_to_scale(float(y) + 0.5, 0.0, s, -1.0, 1.0)
+                alt = radar_altitude_map[x][y]
+                bin = map_value_to_scale(alt, radar_altitude_map_min, radar_altitude_map_max, 0.1, 19.9)
+                #bin = map_value_to_scale(x_val, -1.0, 1.0, 0.1, 19.9)
+                
+                bin = int(bin)
+                self.radarPlotter.updatePlot(bin, (x_val, y_val))
+                
+        self.radarPlotter.update()
+        
         
     @pyqtSlot('QString')
     def flightPlot_selection_changed(self, text):
@@ -219,9 +284,12 @@ class KerbalPie(QWidget):
         if text == 'Vertical Speed':
             self.controllerPlotter.setYMin(-2.0)
             self.controllerPlotter.setYMax(2.0)
+            self.controllerPlotter.setYTickInterval(0.5)
         elif text == 'Altitude':
             self.controllerPlotter.setYMin(70.0)
             self.controllerPlotter.setYMax(200.0)
+            self.controllerPlotter.setYTickInterval(10.0)
+            
     
     
     # O V E R R I D E   M E T H O D S 
