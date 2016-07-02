@@ -22,7 +22,7 @@ class KPFlightController(QtCore.QObject):
 
     subsys = 'CONTROL'
     short_term_period = 0.100
-    long_term_period = 0.100
+    long_term_period = 0.200
     xlong_term_period = 10.0
         
     # S I G N A L S 
@@ -60,7 +60,7 @@ class KPFlightController(QtCore.QObject):
         self._signals = {}
         self._signals_task = 0
         self._signals_update_time = time.time()
-        self._radar_resolution = 20
+        self._radar_resolution = 30
         
         # flight controllers
         self.vertical_speed_ctrl = PidControllerQ(kp=0.181, ki=0.09, kd=0.005, output_min=0.0, output_max=1.0, set_point=0.0, name="Vertical Speed Controller", parent=self)
@@ -273,32 +273,50 @@ class KPFlightController(QtCore.QObject):
             '''
             
             
-            delta_lat = 0.005
-            num_radar_tasks = self._radar_resolution * self._radar_resolution
+            #radar_element_spacing = 60000.0 # meters  60000.0 = can see whole map
+            radar_element_spacing = 0.5
             
-            if self._signals_task >= 0 and self._signals_task < num_radar_tasks:
-                x_idx = int(self._signals_task % self._radar_resolution)
-                y_idx = int(self._signals_task / self._radar_resolution)
-                
-                latitude = self._telemetry['vessel_latitude'] + float(y_idx - self._radar_resolution / 2) * delta_lat
-                longitude = self._telemetry['vessel_longitude'] + float(x_idx - self._radar_resolution / 2) * delta_lat
-                
-                self._telemetry['surface_height_map'][x_idx][y_idx] = \
-                    self._telemetry['vessel_surface_height'] - self._vessel_body().surface_height(latitude, longitude)
+            body_to_vessel_distance = math.sqrt( \
+                self._telemetry['vessel_position_bdy'][0] ** 2 + \
+                self._telemetry['vessel_position_bdy'][1] ** 2 + \
+                self._telemetry['vessel_position_bdy'][2] ** 2 )
+            delta_lat = math.degrees(radar_element_spacing / body_to_vessel_distance)
+            #print("delta_lat = {:.20f}".format(delta_lat))
+            
+            num_radar_tasks = self._radar_resolution * self._radar_resolution
+            num_radar_tasks_to_execute = 60
+            
+            for i in range(num_radar_tasks_to_execute):
+            
+                if self._signals_task >= 0 and self._signals_task < num_radar_tasks:
+                    x_idx = int(self._signals_task % self._radar_resolution)
+                    y_idx = int(self._signals_task / self._radar_resolution)
                     
-            self._signals_task += 1
-            if self._signals_task >= num_radar_tasks:
-                self._signals_task = 0
-                
-                
-                for y in self._telemetry['surface_height_map']:
-                    alt_line = []
-                    for x in y:
-                        alt_line.append('{:.2f}'.format(x))
-                    print(' '.join(alt_line))
-                
-                #for a in self._telemetry['surface_height_map'][int(self._radar_resolution / 2)]:
-                    #print("{:.3f}".format(a))
+                    latitude = self._telemetry['vessel_latitude'] + float(y_idx - self._radar_resolution / 2) * delta_lat
+                    longitude = self._telemetry['vessel_longitude'] + float(x_idx - self._radar_resolution / 2) * delta_lat
+                    
+                    latitude = clamp(-89.9, latitude, 89.9)
+                    
+                    self._telemetry['surface_height_map'][y_idx][x_idx] = \
+                        self._telemetry['vessel_surface_height'] - self._vessel_body().surface_height(latitude, longitude)
+                        
+                self._signals_task += 1
+                if self._signals_task >= num_radar_tasks:
+                    self._signals_task = 0
+                    
+                    
+                    print("Span: {:.3f} m  ({:.6f} deg)".format(radar_element_spacing * self._radar_resolution,
+                        delta_lat * self._radar_resolution))
+                    for y in range(len(self._telemetry['surface_height_map']), 0, -1):
+                        #print("{:d}".format(y - 1))
+                        alt_line = []
+                        for x in range(len(self._telemetry['surface_height_map'][y - 1])):
+                            alt_line.append('{:5.1f}'.format(self._telemetry['surface_height_map'][y - 1][x]))
+                        #print(' '.join(alt_line))
+                    
+                    
+                    #for a in self._telemetry['surface_height_map'][int(self._radar_resolution / 2)]:
+                        #print("{:.3f}".format(a))
                 
                 
                 
@@ -353,6 +371,7 @@ class KPFlightController(QtCore.QObject):
         if process_time > KPFlightController.short_term_period:
             self._log_warning('ST processing overrun: Process time = {:.1f} ms, overrun by {:.1f} ms'.format(
                 process_time * 1000.0, (process_time - KPFlightController.short_term_period) * 1000.0))
+        
             
         
     @pyqtSlot()
@@ -480,6 +499,7 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
         'vessel_max_thrust',
         'vessel_latitude',
         'vessel_longitude',
+        'vessel_surface_height',
         'st_time',
         'lt_time',
         'xlt_time',
@@ -513,6 +533,7 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
             ['Max Thrust',        'N',        0.0],
             ['Latitude',          'deg',      0.0],
             ['Longitude',         'deg',      0.0],
+            ['Surface Height',    'm',        0.0],
             ['ST Process Time',   's',        0.0],
             ['LT Process Time',   's',        0.0],
             ['XLT Process Time',  's',        0.0],

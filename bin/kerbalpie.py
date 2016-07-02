@@ -176,12 +176,13 @@ class KerbalPie(QWidget):
         radarLayout.addWidget(self.radarPlotter)
         self.radarTab.setLayout(radarLayout)
         
-        self._radarPlotColorBins = 30
+        self._radarPlotColorBins = 60
         radarPlotColor = QColor()
         for i in range(self._radarPlotColorBins):
             hue = map_value_to_scale(float(i), 0.0, float(self._radarPlotColorBins), 0.0, 0.2) 
             radarPlotColor.setHsvF(hue, 1.0, 1.0)
-            self.radarPlotter.setPlotPen(i, QPen(radarPlotColor, 20.0, Qt.SolidLine, Qt.RoundCap))
+            self.radarPlotter.setPlotPen(i, QPen(radarPlotColor, 15.0, Qt.SolidLine, Qt.RoundCap))
+        self.radarPlotter.setPlotPen(self._radarPlotColorBins, QPen(Qt.blue, 15.0, Qt.SolidLine, Qt.RoundCap))
                 
         self.radarPlotter.update()
            
@@ -268,12 +269,16 @@ class KerbalPie(QWidget):
             for x in range(s):
                 x_val = map_value_to_scale(float(x) + 0.5, 0.0, s, -1.0, 1.0)
                 y_val = map_value_to_scale(float(y) + 0.5, 0.0, s, -1.0, 1.0)
-                alt = radar_altitude_map[x][y]
-                bin = map_value_to_scale(alt, radar_altitude_map_min, radar_altitude_map_max, 0.1, 19.9)
+                alt = radar_altitude_map[y][x]
+                bin = map_value_to_scale(alt, radar_altitude_map_min, radar_altitude_map_max, 0.1, self._radarPlotColorBins - 0.1)
                 #bin = map_value_to_scale(x_val, -1.0, 1.0, 0.1, 19.9)
                 
                 bin = int(bin)
-                self.radarPlotter.updatePlot(bin, (x_val, y_val))
+                
+                if alt > (telemetry_dict['vessel_surface_height'] - 1.0) and alt < (telemetry_dict['vessel_surface_height'] + 1.0):
+                    self.radarPlotter.updatePlot(self._radarPlotColorBins, (x_val, y_val))
+                else:
+                    self.radarPlotter.updatePlot(bin, (x_val, y_val))
                 
         self.radarPlotter.update()
         
