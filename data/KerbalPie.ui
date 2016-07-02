@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>794</width>
-    <height>1246</height>
+    <width>784</width>
+    <height>712</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,7 +17,7 @@
    <item row="0" column="0">
     <widget class="QTabWidget" name="KP_tabWidget">
      <property name="currentIndex">
-      <number>3</number>
+      <number>4</number>
      </property>
      <widget class="QWidget" name="krpcTab">
       <attribute name="title">
@@ -254,29 +254,15 @@
           <item>
            <widget class="QComboBox" name="flightPlot_selection"/>
           </item>
-          <item>
-           <widget class="QFrame" name="flightPlot_plotter">
-            <property name="minimumSize">
-             <size>
-              <width>0</width>
-              <height>100</height>
-             </size>
-            </property>
-            <property name="styleSheet">
-             <string notr="true"/>
-            </property>
-            <property name="frameShape">
-             <enum>QFrame::StyledPanel</enum>
-            </property>
-            <property name="frameShadow">
-             <enum>QFrame::Raised</enum>
-            </property>
-           </widget>
-          </item>
          </layout>
         </widget>
        </item>
       </layout>
+     </widget>
+     <widget class="QWidget" name="radarTab">
+      <attribute name="title">
+       <string>Radar</string>
+      </attribute>
      </widget>
      <widget class="QWidget" name="logTab">
       <attribute name="title">
