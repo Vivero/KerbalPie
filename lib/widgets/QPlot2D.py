@@ -2,7 +2,7 @@
 
 import math, pdb, time
 
-from kptools import *
+from lib.kp_tools import *
 
 from PyQt5.QtCore import QCoreApplication, QLineF, QPoint, QPointF, QRectF
 from PyQt5.QtCore import QSize, QSizeF, Qt, QTimer
@@ -11,7 +11,7 @@ from PyQt5.QtGui import QLinearGradient, QPainter, QPainterPath, QPen
 from PyQt5.QtGui import QPolygon, QPolygonF, QRadialGradient
 from PyQt5.QtWidgets import QApplication, QFrame, QHBoxLayout, QWidget
 
-class Plot2D(QWidget):
+class QPlot2D(QWidget):
 
     # C O N S T R U C T O R 
     #===========================================================================
@@ -26,7 +26,7 @@ class Plot2D(QWidget):
             yTickInterval=0.1,
             labelFont=QFont("Segoe UI", 10),
             **kwds):
-        super(Plot2D, self).__init__(**kwds)
+        super(QPlot2D, self).__init__(**kwds)
         
         # create a frame to hold graphics
         self._plot_frame = QFrame()
@@ -390,7 +390,7 @@ class Plot2D(QWidget):
         self.update()
         
 
-class Plot2DTime(Plot2D):
+class QPlot2DTime(QPlot2D):
 
     # C O N S T R U C T O R 
     #===========================================================================
@@ -418,7 +418,7 @@ class Plot2DTime(Plot2D):
         self._refreshTimer.timeout.connect(self._refresh_plots)
         self._refreshTimer.start(self._refreshRate * 1000.0)
         
-        super(Plot2DTime, self).__init__(
+        super(QPlot2DTime, self).__init__(
             xMin=timeSpan,
             xMax=0.0,
             yMin=yMin,
@@ -438,7 +438,7 @@ class Plot2DTime(Plot2D):
         # define new plot point
         value_tuple = (0.0, value)
         
-        super(Plot2DTime, self).updatePlot(plot_num, value_tuple)
+        super(QPlot2DTime, self).updatePlot(plot_num, value_tuple)
 
 
     # P R I V A T E   M E T H O D S 

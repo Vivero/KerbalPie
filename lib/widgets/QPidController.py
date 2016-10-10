@@ -12,9 +12,9 @@ else:
     
 from time import sleep
 
-from logger import KPLogger
-from kptools import PidController
-from widgets.Plot2D import *
+from lib.logger import Logger
+from lib.kp_tools import PidController
+from lib.widgets.QPlot2D import *
 
 from PyQt5 import QtCore
 from PyQt5.QtCore import QVariant, Qt, pyqtSignal, pyqtSlot
@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import QPushButton, QSizePolicy, QWidget
 
 #--- Wrapper for PID Controller class augmented with Qt functionality
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
-class PidControllerQ(QtCore.QObject):
+class QPidController(QtCore.QObject):
 
     subsys = 'PID'
         
@@ -47,7 +47,7 @@ class PidControllerQ(QtCore.QObject):
     # C O N S T R U C T O R 
     #===========================================================================
     def __init__(self, kp, ki, kd, output_min, output_max, set_point, name="controller", **kwds):
-        super(PidControllerQ, self).__init__(**kwds)
+        super(QPidController, self).__init__(**kwds)
         
         self._pid = PidController(kp, ki, kd, output_min, output_max, set_point)
         self.name = name
@@ -133,16 +133,16 @@ class PidControllerQ(QtCore.QObject):
     # H E L P E R   F U N C T I O N S 
     #===========================================================================
     def _log(self, log_message, log_type='info', log_data=None):
-        KPLogger.log(PidController.subsys, log_message, log_type, log_data)
+        Logger.log(QPidController.subsys, log_message, log_type, log_data)
         
     def _log_exception(self, log_message, log_exception):
-        KPLogger.log_exception(PidController.subsys, log_message, log_exception)
+        Logger.log_exception(QPidController.subsys, log_message, log_exception)
     
     
     
 #--- Qt widget with editable panels for editing PID controller items
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
-class PidControllerPanel(QWidget):
+class QPidControllerPanel(QWidget):
 
     subsys = 'PID_PANEL'
         
@@ -153,7 +153,7 @@ class PidControllerPanel(QWidget):
     # C O N S T R U C T O R 
     #===========================================================================
     def __init__(self, pid_controller, **kwds):
-        super(PidControllerPanel, self).__init__(**kwds)
+        super(QPidControllerPanel, self).__init__(**kwds)
         
         # PidControllerQ object
         self._pid = pid_controller
@@ -201,7 +201,7 @@ class PidControllerPanel(QWidget):
         gain_controls_widget.setLayout(grid_layout)
 
         # create widget for gain plotter
-        self._pid_plotter = Plot2DTime(
+        self._pid_plotter = QPlot2DTime(
             timeSpan=30.0,
             yMin=-0.5,
             yMax=0.5,
@@ -274,6 +274,4 @@ class PidControllerPanel(QWidget):
         self._pid_plotter.updatePlot(0, self._pid.getProportionalValue())
         self._pid_plotter.updatePlot(1, self._pid.getIntegralValue())
         self._pid_plotter.updatePlot(2, self._pid.getDerivativeValue())
-        
-    
         

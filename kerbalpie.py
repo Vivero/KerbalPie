@@ -14,16 +14,17 @@ else:
 
 from PyQt5 import QtCore, uic
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QColor, QPalette, QPen
+from PyQt5.QtGui import QColor, QFont, QPalette, QPen
 from PyQt5.QtWidgets import QAbstractItemView, QApplication, QHeaderView
 from PyQt5.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
-from logger import KPLogger
-from widgets.Plot2D import *
-from widgets.PidControllerQ import PidControllerPanel
-from flightcontrol import KPFlightDataModel, KPFlightController
-from missioncontrol import MissionProgramsModel, MissionProgramsDatabase
-from kptools import *
+from lib.logger import Logger
+from lib.widgets.QPlot2D import QPlot2D, QPlot2DTime
+from lib.widgets.QPidController import QPidControllerPanel
+from lib.kp_flight_controller import KPFlightDataModel, KPFlightController
+from lib.kp_mission_control import KPMissionProgramsModel, KPMissionProgramsDatabase
+from lib.kp_serial_interface import KPSerialInterface
+from lib.kp_tools import *
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#  C L A S S E S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -48,35 +49,70 @@ class KerbalPie(QWidget):
     
     # C O N S T R U C T O R 
     #===========================================================================
-    def __init__(self, parent=None, config_filename=os.path.join('..', 'data', 'kerbalpie.cfg'), debug_on=False):
+    def __init__(self, parent=None, config_filename=os.path.join('data', 'kerbalpie.cfg'), debug_on=False):
         super(KerbalPie, self).__init__(parent)
-        uic.loadUi(os.path.join('..', 'data', 'KerbalPie.ui'), self)
+        uic.loadUi(os.path.join('data', 'KerbalPie.ui'), self)
         
         # Set up KerbalPie application
         #-----------------------------------------------------------------------
+        
         # parse configuration options
         self.config = self._parse_config(config_filename)
         
+
         # general message logging
         #-----------------------------------------------------------------------
-        self._logger_thread = KPLogger(log_dir=self.config['logger_directory'], log_name=self.config['logger_filename'])
+        self._logger_thread = Logger(log_dir=self.config['logger_directory'], log_name=self.config['logger_filename'], debug_on=True)
         self._logger_thread.start()
         
+
+        # serial interface
+        #-----------------------------------------------------------------------
+        
+        # interface thread
+        self._serial_thread = QtCore.QThread()
+        self._serial_iface = KPSerialInterface(
+            serial_port=self.config['serial_port'], 
+            serial_baudrate=self.config['serial_baudrate'])
+        self._serial_iface.moveToThread(self._serial_thread)
+        
+
         # flight controller
         #-----------------------------------------------------------------------
         
         # controller thread
         self._flight_thread = QtCore.QThread()
-        self._flight_ctrl = KPFlightController(serial_port=self.config['serial_port'], serial_baudrate=self.config['serial_baudrate'], krpc_address=self.config['krpc_address'], krpc_rpc_port=self.config['krpc_rpc_port'], krpc_stream_port=self.config['krpc_stream_port'], krpc_name=self.config['krpc_client_name'])
+        self._flight_ctrl = KPFlightController(
+            krpc_address=self.config['krpc_address'], 
+            krpc_rpc_port=self.config['krpc_rpc_port'], 
+            krpc_stream_port=self.config['krpc_stream_port'], 
+            krpc_name=self.config['krpc_client_name'])
         self._flight_ctrl.moveToThread(self._flight_thread)
         
-        # gui items
+
+        # GUI elements
+        #-----------------------------------------------------------------------
+
+        # serial interface thread connections
+        self._serial_thread.started.connect(self._serial_iface.process)
+        self._serial_iface.finished.connect(self._serial_thread.quit)
+        self._serial_iface.finished.connect(self._serial_iface.deleteLater)
+        self._serial_thread.finished.connect(self._serial_thread.deleteLater)
+
+        # serial interface connections
+        self.serial_iface_begin_connect.connect(self._serial_iface.connect)
+        self.serial_iface_begin_disconnect.connect(self._serial_iface.disconnect)
+        self._serial_iface.connected.connect(self.serial_connected)
+        self._serial_iface.disconnected.connect(self.serial_disconnected)
+        self.serial_connectionButton.clicked.connect(self.serial_connectionButton_clicked)
+        self.serial_portEdit.textChanged.connect(self.serial_port_changed)
+        self.serial_baudRateEdit.textChanged.connect(self.serial_baudrate_changed)
         
         # PID controller panels
         self.flightControl_tuningTabGroup = QTabWidget(parent=None)
         self.flightControl_pidControllerPanels = []
         for ctrl in self._flight_ctrl.controllers:
-            ctrl_panel = PidControllerPanel(ctrl, parent=None)
+            ctrl_panel = QPidControllerPanel(ctrl, parent=None)
             self.flightControl_tuningTabGroup.addTab(ctrl_panel, ctrl.name)
             self.flightControl_pidControllerPanels.append(ctrl_panel)
         self.flightControl_tuningGroup.layout().addWidget(self.flightControl_tuningTabGroup)
@@ -89,15 +125,6 @@ class KerbalPie(QWidget):
         
         # flight controller connections
         self._flight_ctrl.telemetry_updated.connect(self.flight_telemetry_updated)
-
-        self.serial_iface_begin_connect.connect(self._flight_ctrl.serial_connect)
-        self.serial_iface_begin_disconnect.connect(self._flight_ctrl.serial_disconnect)
-        self._flight_ctrl.serial_connected.connect(self.serial_connected)
-        self._flight_ctrl.serial_disconnected.connect(self.serial_disconnected)
-        self.serial_connectionButton.clicked.connect(self.serial_connectionButton_clicked)
-        self.serial_portEdit.textChanged.connect(self.serial_port_changed)
-        self.serial_baudRateEdit.textChanged.connect(self.serial_baudrate_changed)
-
         self.krpc_client_begin_connect.connect(self._flight_ctrl.krpc_connect)
         self.krpc_client_begin_disconnect.connect(self._flight_ctrl.krpc_disconnect)
         self._flight_ctrl.krpc_connected.connect(self.krpc_client_connected)
@@ -107,7 +134,9 @@ class KerbalPie(QWidget):
         self.krpc_rpcPortEdit.textChanged.connect(self.krpc_client_rpc_port_changed)
         self.krpc_streamPortEdit.textChanged.connect(self.krpc_client_stream_port_changed)
         
+        # start threads
         self._flight_thread.start()
+        self._serial_thread.start()
         
         
         # flight data display
@@ -133,7 +162,7 @@ class KerbalPie(QWidget):
         pal = QPalette(self.palette())
         pal.setColor(QPalette.Background, Qt.white)
         
-        self.controllerPlotter = Plot2DTime(
+        self.controllerPlotter = QPlot2DTime(
             timeSpan=30.0,
             yMin=-2.0,
             yMax=2.0,
@@ -151,9 +180,9 @@ class KerbalPie(QWidget):
         
         # mission programs table
         #-----------------------------------------------------------------------
-        self.mission_program_db = MissionProgramsDatabase(parent=self)
+        self.mission_program_db = KPMissionProgramsDatabase(parent=self)
         
-        self.mission_programs_model = MissionProgramsModel(mp_database=self.mission_program_db, parent=self)
+        self.mission_programs_model = KPMissionProgramsModel(mp_database=self.mission_program_db, parent=self)
         self.mission_programTableView.setModel(self.mission_programs_model)
         self.mission_programTableView.verticalHeader().setVisible(False)
         self.mission_programTableView.verticalHeader().sectionResizeMode(QHeaderView.Fixed)
@@ -177,7 +206,7 @@ class KerbalPie(QWidget):
         # debug
         #-----------------------------------------------------------------------
         
-        self.radarPlotter = Plot2D(
+        self.radarPlotter = QPlot2D(
             xMin=-1.0,
             xMax=1.0,
             yMin=-1.0,
@@ -221,17 +250,17 @@ class KerbalPie(QWidget):
     
     @pyqtSlot()
     def serial_port_changed(self, text):
-        self._flight_ctrl.serial_port = text
+        self._serial_iface.port = text
         
     @pyqtSlot()
     def serial_baudrate_changed(self, text):
         (baudrate, ok) = text.toInt()
         if ok:
-            self._flight_ctrl.serial_baudrate = baudrate
+            self._serial_iface.baudrate = baudrate
         
     @pyqtSlot()
     def serial_connectionButton_clicked(self):
-        if not self._flight_ctrl.serial_is_connected:
+        if not self._serial_iface.is_connected:
             self.serial_iface_begin_connect.emit()
         else:
             self.serial_iface_begin_disconnect.emit()
@@ -349,6 +378,7 @@ class KerbalPie(QWidget):
     #===========================================================================
         
     def close(self):
+        self._serial_iface.terminate = True
         self._flight_ctrl.terminate = True
         
         self._logger_thread.terminate()
@@ -368,14 +398,14 @@ class KerbalPie(QWidget):
         cfg.read(config_filename)
         
         config = {
-            'logger_directory' : cfg.get(KerbalPie._CFG_GLOBALS_SECTION, 'logger_directory'),
-            'logger_filename' : cfg.get(KerbalPie._CFG_GLOBALS_SECTION, 'logger_filename'),
-            'krpc_address' : cfg.get(KerbalPie._CFG_KRPC_SECTION, 'krpc_address'),
-            'krpc_client_name' : cfg.get(KerbalPie._CFG_KRPC_SECTION, 'krpc_client_name'),
-            'krpc_rpc_port' : cfg.getint(KerbalPie._CFG_KRPC_SECTION, 'krpc_rpc_port'),
-            'krpc_stream_port' : cfg.getint(KerbalPie._CFG_KRPC_SECTION, 'krpc_stream_port'),
-            'serial_port' : cfg.get(KerbalPie._CFG_SERIAL_SECTION, 'serial_port'),
-            'serial_baudrate' : cfg.getint(KerbalPie._CFG_SERIAL_SECTION, 'serial_baudrate'),
+            'logger_directory'  : cfg.get(KerbalPie._CFG_GLOBALS_SECTION, 'logger_directory'),
+            'logger_filename'   : cfg.get(KerbalPie._CFG_GLOBALS_SECTION, 'logger_filename'),
+            'krpc_address'      : cfg.get(KerbalPie._CFG_KRPC_SECTION, 'krpc_address'),
+            'krpc_client_name'  : cfg.get(KerbalPie._CFG_KRPC_SECTION, 'krpc_client_name'),
+            'krpc_rpc_port'     : cfg.getint(KerbalPie._CFG_KRPC_SECTION, 'krpc_rpc_port'),
+            'krpc_stream_port'  : cfg.getint(KerbalPie._CFG_KRPC_SECTION, 'krpc_stream_port'),
+            'serial_port'       : cfg.get(KerbalPie._CFG_SERIAL_SECTION, 'serial_port'),
+            'serial_baudrate'   : cfg.getint(KerbalPie._CFG_SERIAL_SECTION, 'serial_baudrate'),
         }
         
         return config
@@ -411,7 +441,7 @@ if __name__ == '__main__':
         action="store_true")
     args = arg_parser.parse_args()
     
-    config_filename = args.config if args.config is not None else os.path.join('..', 'data', 'kerbalpie.cfg')
+    config_filename = args.config if args.config is not None else os.path.join('data', 'kerbalpie.cfg')
     
     
     # start a Qt GUI

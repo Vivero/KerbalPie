@@ -3,13 +3,14 @@ import collections, krpc, math, time
 from time import sleep
 
 from PyQt5 import QtCore
-from PyQt5.QtCore import QCoreApplication, QIODevice, Qt, QTimer, QVariant, pyqtSignal, pyqtSlot
-from PyQt5.QtSerialPort import QSerialPort
+from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal
+from PyQt5.QtCore import pyqtSlot
 
-from kptools import *
-from logger import KPLogger
-from missioncontrol import MissionProgram, MissionProgramsDatabase
-from widgets.PidControllerQ import PidControllerQ
+from lib.kp_tools import *
+from lib.kp_mission_control import KPMissionProgram, KPMissionProgramsDatabase
+from lib.kp_serial_interface import KPSerialInterface
+from lib.logger import Logger
+from lib.widgets.QPidController import QPidController
 
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -28,8 +29,6 @@ class KPFlightController(QtCore.QObject):
         
     # S I G N A L S 
     #===========================================================================
-    serial_connected = pyqtSignal()
-    serial_disconnected = pyqtSignal()
     krpc_connected = pyqtSignal()
     krpc_disconnected = pyqtSignal()
     telemetry_updated = pyqtSignal(dict)
@@ -38,20 +37,18 @@ class KPFlightController(QtCore.QObject):
     
     # C O N S T R U C T O R 
     #===========================================================================
-    def __init__(self, serial_port="COM4", serial_baudrate=250000, krpc_address="127.0.0.1", krpc_rpc_port=50000, krpc_stream_port=50001, krpc_name="KerbalPie", **kwds):
+    def __init__(self, 
+            krpc_address="127.0.0.1", 
+            krpc_rpc_port=50000, 
+            krpc_stream_port=50001, 
+            krpc_name="KerbalPie", 
+            **kwds):
         super(KPFlightController, self).__init__(**kwds)
         
         # thread variables
         self.terminate = False
         self._current_time = time.time()
         self._previous_time = self._current_time
-        
-        # Serial interface
-        self._serial = None
-        self.serial_is_connected = False
-        self.serial_port = serial_port
-        self.serial_baudrate = serial_baudrate
-        self._serial_rx_buffer = collections.deque(maxlen=512)
         
         # KRPC client
         self._krpc = None
@@ -73,8 +70,8 @@ class KPFlightController(QtCore.QObject):
         self._radar_resolution = 30
         
         # flight controllers
-        self.vertical_speed_ctrl = PidControllerQ(kp=0.181, ki=0.09, kd=0.005, output_min=0.0, output_max=1.0, set_point=0.0, name="Vertical Speed Controller", parent=self)
-        self.altitude_ctrl = PidControllerQ(kp=1.5, ki=0.005, kd=0.005, output_min=-5.0, output_max=5.0, set_point=85.0, name="Altitude Controller", parent=self)
+        self.vertical_speed_ctrl = QPidController(kp=0.181, ki=0.09, kd=0.005, output_min=0.0, output_max=1.0, set_point=0.0, name="Vertical Speed Controller", parent=self)
+        self.altitude_ctrl = QPidController(kp=1.5, ki=0.005, kd=0.005, output_min=-5.0, output_max=5.0, set_point=85.0, name="Altitude Controller", parent=self)
         self.controllers = []
         self.controllers.append(self.vertical_speed_ctrl)
         self.controllers.append(self.altitude_ctrl)
@@ -432,78 +429,13 @@ class KPFlightController(QtCore.QObject):
             
         # thread termination
         self.krpc_disconnect()
-        self.serial_disconnect()
         self._log('Flight control thread terminating...')
         self.finished.emit()
         
-    @pyqtSlot(MissionProgram)
+    @pyqtSlot(KPMissionProgram)
     def set_active_program(self, program):
         self._mission_program = program
         self._set_active_program_settings()
-                
-        
-    @pyqtSlot()
-    def serial_connect(self):
-        if self._serial is None:
-            self._serial = QSerialPort()
-            self._serial.readyRead.connect(self.serial_read_bytes)
-
-        self._serial.setPortName(self.serial_port)
-        self._serial.setBaudRate(self.serial_baudrate)
-
-        try:
-            # attempt to connect
-            self._log('Connecting serial port {:s} ...'.format(self.serial_port))
-            self._serial.open(QIODevice.ReadWrite)
-            
-            # emit succesful connection signals
-            self.serial_is_connected = True
-            self.serial_connected.emit()
-            
-            self._log('Connected serial port!')
-            
-        except Exception as e:
-            self._log_exception('Unable to open serial port', e)
-
-
-    @pyqtSlot()
-    def serial_read_bytes(self):
-        rx_bytes = self._serial.readAll()
-
-        print("len = {:3d}".format(len(self._serial_rx_buffer)))
-        print(rx_bytes.data())
-
-        #for i in range(len(rx_bytes)):
-            #print(rx_bytes.data()[i].__class__.__name__)
-            #self._serial_rx_buffer.append(rx_bytes.data()[i])
-
-        for b in rx_bytes.data():
-             self._serial_rx_buffer.append(b)
-
-        
-
-
-
-        try:
-            print(self._serial_rx_buffer)
-        except Exception as e:
-            self._log_exception('EXCEPTION! {:s}'.format(str(e)), e)
-
-        if (rx_bytes[0] == '\x24') and (rx_bytes[1] == '\x24') and (len(rx_bytes) == 10):
-            joystickX = int.from_bytes(rx_bytes.mid(4,2), byteorder='little')
-            joystickY = int.from_bytes(rx_bytes.mid(6,2), byteorder='little')
-            joystickZ = int.from_bytes(rx_bytes.mid(8,2), byteorder='little')
-            #self._log('rx_bytes ({:d}) = ({:4d},{:4d},{:4d})'.format(len(rx_bytes), joystickX, joystickY, joystickZ))
-
-            
-        
-    @pyqtSlot()
-    def serial_disconnect(self):
-        if self._serial is not None:
-            self._serial.close()
-            self.serial_is_connected = False
-            self.serial_disconnected.emit()
-            self._log('Disconnected serial port')
                 
         
     @pyqtSlot()
@@ -542,13 +474,13 @@ class KPFlightController(QtCore.QObject):
     # H E L P E R   F U N C T I O N S 
     #===========================================================================
     def _log(self, log_message, log_type='info', log_data=None):
-        KPLogger.log(KPFlightController.subsys, log_message, log_type, log_data)
+        Logger.log(KPFlightController.subsys, log_message, log_type, log_data)
         
     def _log_warning(self, log_message, log_data=None):
-        KPLogger.log_warning(KPFlightController.subsys, log_message, log_data)
+        Logger.log_warning(KPFlightController.subsys, log_message, log_data)
         
     def _log_exception(self, log_message, log_exception):
-        KPLogger.log_exception(KPFlightController.subsys, log_message, log_exception)
+        Logger.log_exception(KPFlightController.subsys, log_message, log_exception)
     
     
     

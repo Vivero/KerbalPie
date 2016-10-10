@@ -24,12 +24,13 @@ from threading import Lock
 
 #--- General logging functionality
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
-class KPLogger(threading.Thread):
+class Logger(threading.Thread):
 
     subsys = 'LOGGER'
     
     log_queue = Queue(500)
     log_lock = Lock()
+    debug = False
 
     def __init__(self, log_dir=os.getcwd(), log_name="kerbalpie.log", debug_on=False):
         threading.Thread.__init__(self)
@@ -40,7 +41,7 @@ class KPLogger(threading.Thread):
         
         self.log_full_filename = os.path.join(log_dir, log_name)
         
-        self.debug_on = debug_on
+        debug = debug_on
         
         
     def run(self):
@@ -49,7 +50,7 @@ class KPLogger(threading.Thread):
         log_file_exists = os.path.isfile(self.log_full_filename)
     
         # log a start message
-        KPLogger.log(KPLogger.subsys,
+        Logger.log(Logger.subsys,
             'Logger initialized, {:s}: "{:s}"'.format(
                 "appending to" if log_file_exists else "created", 
                 self.log_full_filename))
@@ -63,7 +64,7 @@ class KPLogger(threading.Thread):
             sleep(self._log_sleep_time)
             
         # before terminating, log a message, flush the queue
-        KPLogger.log(self.subsys, 'Logger terminating ...')
+        Logger.log(self.subsys, 'Logger terminating ...')
         self.flush_queue()
         
                     
@@ -83,11 +84,12 @@ class KPLogger(threading.Thread):
         else:
             log_dict = log_entry
             
-        print("LOG {:s} | {:s}".format(time.strftime("%H:%M:%S", time.localtime(current_time)), log_message))
+        if Logger.debug:
+            print("LOG {:s} | {:s}".format(time.strftime("%H:%M:%S", time.localtime(current_time)), log_message))
         
         # attempt to place in queue
         try:
-            KPLogger.log_queue.put(log_dict)
+            Logger.log_queue.put(log_dict)
         except Queue.Full as e:
             sys.stderr.write('Warning: log queue full, discarding message: "{:s}"\n'.format(log_message))
         
@@ -95,11 +97,11 @@ class KPLogger(threading.Thread):
                     
     @staticmethod
     def log_error(log_subsys, log_message, log_data=None):
-        KPLogger.log(log_subsys, log_message, 'error', log_data)
+        Logger.log(log_subsys, log_message, 'error', log_data)
                     
     @staticmethod
     def log_warning(log_subsys, log_message, log_data=None):
-        KPLogger.log(log_subsys, log_message, 'warning', log_data)
+        Logger.log(log_subsys, log_message, 'warning', log_data)
         
                     
     @staticmethod
@@ -109,7 +111,7 @@ class KPLogger(threading.Thread):
             'exception_type' : log_exception.__class__.__name__,
             'exception_msg'  : str(log_exception)
         }
-        KPLogger.log(log_subsys, log_message, log_type, log_data)
+        Logger.log(log_subsys, log_message, log_type, log_data)
     
         
         
@@ -139,8 +141,8 @@ class KPLogger(threading.Thread):
     
     @staticmethod
     def clear_queue():
-        while not KPLogger.log_queue.empty():
-            KPLogger.log_queue.get()
+        while not Logger.log_queue.empty():
+            Logger.log_queue.get()
         
         
     def is_terminated(self):
@@ -148,5 +150,4 @@ class KPLogger(threading.Thread):
     
     def terminate(self):
         self.stop.set()
-        
         

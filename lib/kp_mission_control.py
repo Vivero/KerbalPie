@@ -3,9 +3,10 @@ import krpc, math, time
 from time import sleep
 
 from PyQt5 import QtCore
-from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal
+from PyQt5.QtCore import pyqtSlot
 
-from logger import KPLogger
+from lib.logger import Logger
 
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -14,14 +15,14 @@ from logger import KPLogger
 
 #--- Mission Program definition
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
-class MissionProgram(QtCore.QObject):
+class KPMissionProgram(QtCore.QObject):
 
     subsys = 'MP'
     
     # C O N S T R U C T O R 
     #===========================================================================
     def __init__(self, id, name, description, settings, **kwds):
-        super(MissionProgram, self).__init__(**kwds)
+        super(KPMissionProgram, self).__init__(**kwds)
 
         self.id = id
         self.name = name
@@ -33,21 +34,21 @@ class MissionProgram(QtCore.QObject):
 
 #--- Mission Programs database
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
-class MissionProgramsDatabase(QtCore.QObject):
+class KPMissionProgramsDatabase(QtCore.QObject):
 
     subsys = 'MP_DB'
         
     # S I G N A L S 
     #===========================================================================
-    current_program_updated = pyqtSignal(MissionProgram)
+    current_program_updated = pyqtSignal(KPMissionProgram)
     
     
     # C O N S T R U C T O R 
     #===========================================================================
     def __init__(self, **kwds):
-        super(MissionProgramsDatabase, self).__init__(**kwds)
+        super(KPMissionProgramsDatabase, self).__init__(**kwds)
         
-        mp_full_manual = MissionProgram(
+        mp_full_manual = KPMissionProgram(
             id='full_manual',
             name='Manual Flight Control',
             description="No controls will be applied to the vessel.",
@@ -59,7 +60,7 @@ class MissionProgramsDatabase(QtCore.QObject):
             },
         )
         
-        mp_vspeed_manual = MissionProgram(
+        mp_vspeed_manual = KPMissionProgram(
             id='vspeed_manual',
             name='Vertical Speed Control - Manual',
             description="Vessel will maintain a specified vertical (relative to the planet surface) speed. PID controller gains are editable.",
@@ -71,7 +72,7 @@ class MissionProgramsDatabase(QtCore.QObject):
             },
         )
         
-        mp_vspeed_auto = MissionProgram(
+        mp_vspeed_auto = KPMissionProgram(
             id='vspeed_auto',
             name='Vertical Speed Control - Auto',
             description="Vessel will maintain a specified vertical (relative to the planet surface) speed. PID controller gains are automatically adjusted according to the vessel's thrust-to-weight ratio.",
@@ -83,7 +84,7 @@ class MissionProgramsDatabase(QtCore.QObject):
             },
         )
         
-        mp_altitude_manual = MissionProgram(
+        mp_altitude_manual = KPMissionProgram(
             id='altitude_manual',
             name='Altitude Control - Manual',
             description="Vessel will maintain a specified mean altitude (relative to the planet sea-level). PID controller gains are editable.",
@@ -95,7 +96,7 @@ class MissionProgramsDatabase(QtCore.QObject):
             },
         )
         
-        mp_altitude_auto = MissionProgram(
+        mp_altitude_auto = KPMissionProgram(
             id='altitude_auto',
             name='Altitude Control - Auto',
             description="Vessel will maintain a specified mean altitude (relative to the planet sea-level). PID controller gains are automatically adjusted.",
@@ -107,7 +108,7 @@ class MissionProgramsDatabase(QtCore.QObject):
             },
         )
         
-        mp_controlled_descent = MissionProgram(
+        mp_controlled_descent = KPMissionProgram(
             id='controlled_descent',
             name='Controlled Descent',
             description="Vessel will descend to the planet's surface in a controlled manner.",
@@ -119,7 +120,7 @@ class MissionProgramsDatabase(QtCore.QObject):
             },
         )
         
-        mp_forward_stabilize = MissionProgram(
+        mp_forward_stabilize = KPMissionProgram(
             id='fwd_stabilize',
             name='Forward Stabilize',
             description="Vessel will cancel all horizontal (relative to the planet's surface) speed in the forward/aft direction.",
@@ -170,13 +171,13 @@ class MissionProgramsDatabase(QtCore.QObject):
     # H E L P E R   F U N C T I O N S 
     #===========================================================================
     def _log(self, log_message, log_type='info', log_data=None):
-        KPLogger.log(MissionProgramsDatabase.subsys, log_message, log_type, log_data)
+        Logger.log(KPMissionProgramsDatabase.subsys, log_message, log_type, log_data)
     
     
 
 #--- Qt Model for storing Mission Programs
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
-class MissionProgramsModel(QtCore.QAbstractTableModel):
+class KPMissionProgramsModel(QtCore.QAbstractTableModel):
 
     subsys = 'MP_MODEL'
     
@@ -184,7 +185,7 @@ class MissionProgramsModel(QtCore.QAbstractTableModel):
     # C O N S T R U C T O R 
     #===========================================================================
     def __init__(self, mp_database, **kwds):
-        super(MissionProgramsModel, self).__init__(**kwds)
+        super(KPMissionProgramsModel, self).__init__(**kwds)
         
         # set up model data
         self._mp_table_header = ['Program Name', 'State']
@@ -263,7 +264,7 @@ class MissionProgramsModel(QtCore.QAbstractTableModel):
     
     # S L O T S 
     #===========================================================================
-    @pyqtSlot(MissionProgram)
+    @pyqtSlot(KPMissionProgram)
     def set_active_program(self, program):
         for mp_idx in range(len(self._mp_database.db)):
             if program.id == self._mp_database.db[mp_idx].id:
