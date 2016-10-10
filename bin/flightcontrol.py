@@ -1,4 +1,4 @@
-import krpc, math, time
+import collections, krpc, math, time
 
 from time import sleep
 
@@ -51,6 +51,7 @@ class KPFlightController(QtCore.QObject):
         self.serial_is_connected = False
         self.serial_port = serial_port
         self.serial_baudrate = serial_baudrate
+        self._serial_rx_buffer = collections.deque(maxlen=512)
         
         # KRPC client
         self._krpc = None
@@ -468,18 +469,31 @@ class KPFlightController(QtCore.QObject):
     @pyqtSlot()
     def serial_read_bytes(self):
         rx_bytes = self._serial.readAll()
-        '''
-        try:
-            self._log('rx_bytes ({:d}) = {:s}'.format(len(rx_bytes), rx_bytes))
-        except Exception as e:
-            self._log_exception('EXCEPTION!', e)
-        '''
 
-        if (rx_bytes[0] == '$') and (rx_bytes[1] == '$') and (len(rx_bytes) == 10):
+        print("len = {:3d}".format(len(self._serial_rx_buffer)))
+        print(rx_bytes.data())
+
+        #for i in range(len(rx_bytes)):
+            #print(rx_bytes.data()[i].__class__.__name__)
+            #self._serial_rx_buffer.append(rx_bytes.data()[i])
+
+        for b in rx_bytes.data():
+             self._serial_rx_buffer.append(b)
+
+        
+
+
+
+        try:
+            print(self._serial_rx_buffer)
+        except Exception as e:
+            self._log_exception('EXCEPTION! {:s}'.format(str(e)), e)
+
+        if (rx_bytes[0] == '\x24') and (rx_bytes[1] == '\x24') and (len(rx_bytes) == 10):
             joystickX = int.from_bytes(rx_bytes.mid(4,2), byteorder='little')
             joystickY = int.from_bytes(rx_bytes.mid(6,2), byteorder='little')
             joystickZ = int.from_bytes(rx_bytes.mid(8,2), byteorder='little')
-            self._log('rx_bytes ({:d}) = ({:4d},{:4d},{:4d})'.format(len(rx_bytes), joystickX, joystickY, joystickZ))
+            #self._log('rx_bytes ({:d}) = ({:4d},{:4d},{:4d})'.format(len(rx_bytes), joystickX, joystickY, joystickZ))
 
             
         
