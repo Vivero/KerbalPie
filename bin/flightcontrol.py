@@ -3,7 +3,8 @@ import krpc, math, time
 from time import sleep
 
 from PyQt5 import QtCore
-from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QCoreApplication, QIODevice, Qt, QTimer, QVariant, pyqtSignal, pyqtSlot
+from PyQt5.QtSerialPort import QSerialPort
 
 from kptools import *
 from logger import KPLogger
@@ -27,6 +28,8 @@ class KPFlightController(QtCore.QObject):
         
     # S I G N A L S 
     #===========================================================================
+    serial_connected = pyqtSignal()
+    serial_disconnected = pyqtSignal()
     krpc_connected = pyqtSignal()
     krpc_disconnected = pyqtSignal()
     telemetry_updated = pyqtSignal(dict)
@@ -35,13 +38,19 @@ class KPFlightController(QtCore.QObject):
     
     # C O N S T R U C T O R 
     #===========================================================================
-    def __init__(self, krpc_address="127.0.0.1", krpc_rpc_port=50000, krpc_stream_port=50001, krpc_name="KerbalPie", **kwds):
+    def __init__(self, serial_port="COM4", serial_baudrate=250000, krpc_address="127.0.0.1", krpc_rpc_port=50000, krpc_stream_port=50001, krpc_name="KerbalPie", **kwds):
         super(KPFlightController, self).__init__(**kwds)
         
         # thread variables
         self.terminate = False
         self._current_time = time.time()
         self._previous_time = self._current_time
+        
+        # Serial interface
+        self._serial = None
+        self.serial_is_connected = False
+        self.serial_port = serial_port
+        self.serial_baudrate = serial_baudrate
         
         # KRPC client
         self._krpc = None
@@ -305,8 +314,8 @@ class KPFlightController(QtCore.QObject):
                     self._signals_task = 0
                     
                     
-                    print("Span: {:.3f} m  ({:.6f} deg)".format(radar_element_spacing * self._radar_resolution,
-                        delta_lat * self._radar_resolution))
+                    #print("Span: {:.3f} m  ({:.6f} deg)".format(radar_element_spacing * self._radar_resolution,
+                    #    delta_lat * self._radar_resolution))
                     for y in range(len(self._telemetry['surface_height_map']), 0, -1):
                         #print("{:d}".format(y - 1))
                         alt_line = []
@@ -421,6 +430,8 @@ class KPFlightController(QtCore.QObject):
             
             
         # thread termination
+        self.krpc_disconnect()
+        self.serial_disconnect()
         self._log('Flight control thread terminating...')
         self.finished.emit()
         
@@ -428,6 +439,57 @@ class KPFlightController(QtCore.QObject):
     def set_active_program(self, program):
         self._mission_program = program
         self._set_active_program_settings()
+                
+        
+    @pyqtSlot()
+    def serial_connect(self):
+        if self._serial is None:
+            self._serial = QSerialPort()
+            self._serial.readyRead.connect(self.serial_read_bytes)
+
+        self._serial.setPortName(self.serial_port)
+        self._serial.setBaudRate(self.serial_baudrate)
+
+        try:
+            # attempt to connect
+            self._log('Connecting serial port {:s} ...'.format(self.serial_port))
+            self._serial.open(QIODevice.ReadWrite)
+            
+            # emit succesful connection signals
+            self.serial_is_connected = True
+            self.serial_connected.emit()
+            
+            self._log('Connected serial port!')
+            
+        except Exception as e:
+            self._log_exception('Unable to open serial port', e)
+
+
+    @pyqtSlot()
+    def serial_read_bytes(self):
+        rx_bytes = self._serial.readAll()
+        '''
+        try:
+            self._log('rx_bytes ({:d}) = {:s}'.format(len(rx_bytes), rx_bytes))
+        except Exception as e:
+            self._log_exception('EXCEPTION!', e)
+        '''
+
+        if (rx_bytes[0] == '$') and (rx_bytes[1] == '$') and (len(rx_bytes) == 10):
+            joystickX = int.from_bytes(rx_bytes.mid(4,2), byteorder='little')
+            joystickY = int.from_bytes(rx_bytes.mid(6,2), byteorder='little')
+            joystickZ = int.from_bytes(rx_bytes.mid(8,2), byteorder='little')
+            self._log('rx_bytes ({:d}) = ({:4d},{:4d},{:4d})'.format(len(rx_bytes), joystickX, joystickY, joystickZ))
+
+            
+        
+    @pyqtSlot()
+    def serial_disconnect(self):
+        if self._serial is not None:
+            self._serial.close()
+            self.serial_is_connected = False
+            self.serial_disconnected.emit()
+            self._log('Disconnected serial port')
                 
         
     @pyqtSlot()

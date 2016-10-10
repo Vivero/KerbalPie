@@ -17,17 +17,53 @@
    <item row="0" column="0">
     <widget class="QTabWidget" name="KP_tabWidget">
      <property name="currentIndex">
-      <number>4</number>
+      <number>0</number>
      </property>
-     <widget class="QWidget" name="krpcTab">
+     <widget class="QWidget" name="remoteTab">
       <attribute name="title">
-       <string>KRPC</string>
+       <string>Remote</string>
       </attribute>
       <layout class="QGridLayout" name="gridLayout_3">
+       <item row="1" column="0">
+        <widget class="QGroupBox" name="serial_connectionGroup">
+         <property name="title">
+          <string>Serial</string>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_7">
+          <item>
+           <widget class="QPushButton" name="serial_connectionButton">
+            <property name="text">
+             <string>Connect</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="serial_connectionLabel">
+            <property name="text">
+             <string>Status: Disconnected</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="verticalSpacer_2">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>40</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </item>
        <item row="0" column="0">
         <widget class="QGroupBox" name="krpc_connectionGroup">
          <property name="title">
-          <string>Connection</string>
+          <string>KRPC</string>
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_4">
           <item>
@@ -69,7 +105,7 @@
        <item row="0" column="1">
         <widget class="QGroupBox" name="krpc_settingsGroup">
          <property name="title">
-          <string>Settings</string>
+          <string>KRPC Settings</string>
          </property>
          <layout class="QFormLayout" name="krpc_settingsFormLayout">
           <property name="formAlignment">
@@ -135,6 +171,55 @@
             </property>
             <property name="alignment">
              <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QGroupBox" name="serial_settingsGroup">
+         <property name="title">
+          <string>Serial Settings</string>
+         </property>
+         <layout class="QFormLayout" name="formLayout">
+          <item row="0" column="0">
+           <widget class="QLabel" name="serial_portLabel">
+            <property name="text">
+             <string>Port</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="serial_portEdit">
+            <property name="text">
+             <string>COM4</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="serial_baudRateLabel">
+            <property name="text">
+             <string>Baud Rate</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="serial_baudRateEdit">
+            <property name="inputMask">
+             <string>0000000</string>
+            </property>
+            <property name="text">
+             <string>250000</string>
+            </property>
+            <property name="maxLength">
+             <number>7</number>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
             </property>
            </widget>
           </item>

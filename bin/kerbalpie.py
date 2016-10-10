@@ -36,11 +36,14 @@ class KerbalPie(QWidget):
     # configuration file named sections
     _CFG_GLOBALS_SECTION = 'GLOBALS'
     _CFG_KRPC_SECTION    = 'KRPC'
+    _CFG_SERIAL_SECTION  = 'SERIAL'
     
     # S I G N A L S 
     #===========================================================================
     krpc_client_begin_connect = pyqtSignal()
     krpc_client_begin_disconnect = pyqtSignal()
+    serial_iface_begin_connect = pyqtSignal()
+    serial_iface_begin_disconnect = pyqtSignal()
     
     
     # C O N S T R U C T O R 
@@ -64,7 +67,7 @@ class KerbalPie(QWidget):
         
         # controller thread
         self._flight_thread = QtCore.QThread()
-        self._flight_ctrl = KPFlightController(krpc_address=self.config['krpc_address'], krpc_rpc_port=self.config['krpc_rpc_port'], krpc_stream_port=self.config['krpc_stream_port'], krpc_name=self.config['krpc_client_name'])
+        self._flight_ctrl = KPFlightController(serial_port=self.config['serial_port'], serial_baudrate=self.config['serial_baudrate'], krpc_address=self.config['krpc_address'], krpc_rpc_port=self.config['krpc_rpc_port'], krpc_stream_port=self.config['krpc_stream_port'], krpc_name=self.config['krpc_client_name'])
         self._flight_ctrl.moveToThread(self._flight_thread)
         
         # gui items
@@ -86,6 +89,15 @@ class KerbalPie(QWidget):
         
         # flight controller connections
         self._flight_ctrl.telemetry_updated.connect(self.flight_telemetry_updated)
+
+        self.serial_iface_begin_connect.connect(self._flight_ctrl.serial_connect)
+        self.serial_iface_begin_disconnect.connect(self._flight_ctrl.serial_disconnect)
+        self._flight_ctrl.serial_connected.connect(self.serial_connected)
+        self._flight_ctrl.serial_disconnected.connect(self.serial_disconnected)
+        self.serial_connectionButton.clicked.connect(self.serial_connectionButton_clicked)
+        self.serial_portEdit.textChanged.connect(self.serial_port_changed)
+        self.serial_baudRateEdit.textChanged.connect(self.serial_baudrate_changed)
+
         self.krpc_client_begin_connect.connect(self._flight_ctrl.krpc_connect)
         self.krpc_client_begin_disconnect.connect(self._flight_ctrl.krpc_disconnect)
         self._flight_ctrl.krpc_connected.connect(self.krpc_client_connected)
@@ -158,6 +170,9 @@ class KerbalPie(QWidget):
         # automatically start KRPC connection
         QTimer.singleShot(200, self.krpc_connectionButton_clicked)
         
+        # automatically start serial port connection
+        QTimer.singleShot(300, self.serial_connectionButton_clicked)
+        
         
         # debug
         #-----------------------------------------------------------------------
@@ -184,7 +199,7 @@ class KerbalPie(QWidget):
             self.radarPlotter.setPlotPen(i, QPen(radarPlotColor, 15.0, Qt.SolidLine, Qt.RoundCap))
         self.radarPlotter.setPlotPen(self._radarPlotColorBins, QPen(Qt.blue, 15.0, Qt.SolidLine, Qt.RoundCap))
                 
-        self.radarPlotter.update()
+        #self.radarPlotter.update()
            
     
     # S L O T S 
@@ -193,6 +208,33 @@ class KerbalPie(QWidget):
     def update_plots(self):
         pass
             
+    
+    @pyqtSlot()
+    def serial_connected(self):
+        self.serial_connectionLabel.setText("Status: Connected")
+        self.serial_connectionButton.setText("Disconnect")
+
+    @pyqtSlot()
+    def serial_disconnected(self):
+        self.serial_connectionLabel.setText("Status: Disconnected")
+        self.serial_connectionButton.setText("Connect")
+    
+    @pyqtSlot()
+    def serial_port_changed(self, text):
+        self._flight_ctrl.serial_port = text
+        
+    @pyqtSlot()
+    def serial_baudrate_changed(self, text):
+        (baudrate, ok) = text.toInt()
+        if ok:
+            self._flight_ctrl.serial_baudrate = baudrate
+        
+    @pyqtSlot()
+    def serial_connectionButton_clicked(self):
+        if not self._flight_ctrl.serial_is_connected:
+            self.serial_iface_begin_connect.emit()
+        else:
+            self.serial_iface_begin_disconnect.emit()
     
     @pyqtSlot()
     def krpc_client_connected(self):
@@ -250,6 +292,7 @@ class KerbalPie(QWidget):
             self.controllerPlotter.updatePlot(0, telemetry_dict['vessel_mean_altitude'])
             
         # radar
+        '''
         self.radarPlotter.clearPlots()
         
         #surface_height_at_vessel = telemetry_dict['vessel_surface_height']
@@ -281,6 +324,7 @@ class KerbalPie(QWidget):
                     self.radarPlotter.updatePlot(bin, (x_val, y_val))
                 
         self.radarPlotter.update()
+        '''
         
         
     @pyqtSlot('QString')
@@ -330,6 +374,8 @@ class KerbalPie(QWidget):
             'krpc_client_name' : cfg.get(KerbalPie._CFG_KRPC_SECTION, 'krpc_client_name'),
             'krpc_rpc_port' : cfg.getint(KerbalPie._CFG_KRPC_SECTION, 'krpc_rpc_port'),
             'krpc_stream_port' : cfg.getint(KerbalPie._CFG_KRPC_SECTION, 'krpc_stream_port'),
+            'serial_port' : cfg.get(KerbalPie._CFG_SERIAL_SECTION, 'serial_port'),
+            'serial_baudrate' : cfg.getint(KerbalPie._CFG_SERIAL_SECTION, 'serial_baudrate'),
         }
         
         return config
