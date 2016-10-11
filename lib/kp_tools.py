@@ -6,6 +6,9 @@
 import math, time
 from time import sleep
 
+from PyQt5 import QtCore
+from PyQt5.QtCore import pyqtSignal, pyqtSlot
+
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#  F U N C T I O N S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -110,3 +113,36 @@ class PidController():
         
         return self._u
         
+
+
+#--- Remote controller state definition
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+class KPRemoteControlState(QtCore.QObject):
+
+    # C O N S T R U C T O R 
+    #===========================================================================
+    def __init__(self, button_state=0, joystick_x=0, joystick_y=0, joystick_z=0, **kwds):
+        super(KPRemoteControlState, self).__init__(**kwds)
+
+        self._button_state = button_state
+        self.joystick = {}
+        self.joystick['x'] = joystick_x
+        self.joystick['y'] = joystick_y
+        self.joystick['z'] = joystick_z
+
+        # unpack button states
+        self.set_button_states(button_state)
+
+    def set_button_states(self, button_state):
+        self._button_state      = button_state
+        self.btn_switch_red     = (button_state & (1 << 0)) != 0
+        self.btn_switch_blue    = (button_state & (1 << 1)) != 0
+        self.btn_pushbtn_red    = (button_state & (1 << 2)) != 0
+        self.btn_pushbtn_green  = (button_state & (1 << 3)) != 0
+        self.btn_rocker_up      = (button_state & (1 << 4)) != 0
+        self.btn_rocker_down    = (button_state & (1 << 5)) != 0
+        self.btn_joystick_btn   = (button_state & (1 << 6)) != 0
+
+
+    def get_joystick(self, axis):
+        return self.joystick[axis]

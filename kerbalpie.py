@@ -62,7 +62,10 @@ class KerbalPie(QWidget):
 
         # general message logging
         #-----------------------------------------------------------------------
-        self._logger_thread = Logger(log_dir=self.config['logger_directory'], log_name=self.config['logger_filename'], debug_on=True)
+        self._logger_thread = Logger(
+            log_dir=self.config['logger_directory'], 
+            log_name=self.config['logger_filename'], 
+            debug_on=True)
         self._logger_thread.start()
         
 
@@ -133,6 +136,8 @@ class KerbalPie(QWidget):
         self.krpc_addressEdit.textChanged.connect(self.krpc_client_address_changed)
         self.krpc_rpcPortEdit.textChanged.connect(self.krpc_client_rpc_port_changed)
         self.krpc_streamPortEdit.textChanged.connect(self.krpc_client_stream_port_changed)
+
+        self._serial_iface.rc_command.connect(self._flight_ctrl.rc_command_received)
         
         # start threads
         self._flight_thread.start()

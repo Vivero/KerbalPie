@@ -59,6 +59,12 @@ class KPFlightController(QtCore.QObject):
         self.krpc_stream_port = krpc_stream_port
         self._krpc_heartbeat_time = time.time()
         self._krpc_heartbeat_period = 10.0 # seconds
+
+        # remote control data
+        self._rc_rocker_up = False
+        self._rc_rocker_up_prev = False
+        self._rc_rocker_down = False
+        self._rc_rocker_down_prev = False
         
         # flight data
         self._telemetry = {}
@@ -466,8 +472,42 @@ class KPFlightController(QtCore.QObject):
             self.krpc_is_connected = False
             self.krpc_disconnected.emit()
             self._log('Disconnected from KRPC server')
+
+
+    @pyqtSlot(KPRemoteControlState)
+    def rc_command_received(self, rc_cmd):
+        #print(rc_cmd.joystick['x'])
+        #print("RC Command: {:4s} {:4d} {:4d} {:4d}".format(hex(rc_cmd.button_state), rc_cmd.joystick['x'], rc_cmd.joystick['y'], rc_cmd.joystick['z']))
+
+        # map joystick values to [-1.0, 1.0]
+        joystick_x = (float(rc_cmd.joystick['x']) / 1023.0 - 0.5) * 2.0
+        joystick_y = (float(rc_cmd.joystick['y']) / 1023.0 - 0.5) * -2.0
+        joystick_z = (float(rc_cmd.joystick['z']) / 1023.0 - 0.5) * -2.0
+
+        # filter out dead-zone
+        joystick_x = 0.0 if (joystick_x > -0.04 and joystick_x < 0.04) else joystick_x
+        joystick_y = 0.0 if (joystick_y > -0.04 and joystick_y < 0.04) else joystick_y
+        joystick_z = 0.0 if (joystick_z > -0.04 and joystick_z < 0.04) else joystick_z
+
+        print("RC Command: {:4s} {:5.2f} {:5.2f} {:5.2f}".format(hex(rc_cmd._button_state), joystick_x, joystick_y, joystick_z))
+
+        self._rc_rocker_up_prev = self._rc_rocker_up
+        self._rc_rocker_up = rc_cmd.btn_rocker_up
+
+        self._rc_rocker_down_prev = self._rc_rocker_down
+        self._rc_rocker_down = rc_cmd.btn_rocker_down
+
+        self._vessel_control.yaw = joystick_x
+        self._vessel_control.pitch = joystick_y
+        self._vessel_control.roll = joystick_z
+
+        if (self._rc_rocker_down and not self._rc_rocker_down_prev):
+            self.vertical_speed_ctrl.setSetpoint(self.vertical_speed_ctrl._pid.set_point - 0.5)
+
+        if (self._rc_rocker_up and not self._rc_rocker_up_prev):
+            self.vertical_speed_ctrl.setSetpoint(self.vertical_speed_ctrl._pid.set_point + 0.5)
             
-            
+
     
         
         

@@ -84,8 +84,7 @@ class Logger(threading.Thread):
         else:
             log_dict = log_entry
             
-        if Logger.debug:
-            print("LOG {:s} | {:s}".format(time.strftime("%H:%M:%S", time.localtime(current_time)), log_message))
+        print("LOG {:s} | {:s}".format(time.strftime("%H:%M:%S", time.localtime(current_time)), log_message))
         
         # attempt to place in queue
         try:
