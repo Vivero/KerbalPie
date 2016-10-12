@@ -13,6 +13,17 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#  F U N C T I O N S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
+# adds vectors: x + y
+def vector_add(x, y):
+    return [x[i] + y[i] for i in range(len(x))]
+
+# subtracts vectors: x - y
+def vector_subtract(x, y):
+    return [x[i] - y[i] for i in range(len(x))]
+
+def vector_scale(x, a):
+    return [x[i] * a for i in range(len(x))]
+
 def vector_dot_product(x, y):
     return sum(x[i] * y[i] for i in range(len(x)))
     

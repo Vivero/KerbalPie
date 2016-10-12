@@ -123,6 +123,16 @@ class KPFlightController(QtCore.QObject):
         
     # P R I V A T E   M E T H O D S 
     #===========================================================================
+
+    #=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%#
+    #=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%#
+    #                                                                          #
+    #        ==#==  #====  |     #====  #\  /#  #====  ==#==  #==\  \  /       #
+    #          |    #--    |     #--    # \/ #  #--      |    #--/   \/        #
+    #          |    #====  #===  #====  #    #  #====    |    #  \   |         #
+    #                                                                          #
+    #=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%#
+    #=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%=%#
     def _setup_telemetry(self):
         # obtain universal params
         self._space_g = self._krpc.space_center.g
@@ -144,10 +154,11 @@ class KPFlightController(QtCore.QObject):
         self._vessel_surface_vel_ref    = self._krpc.add_stream(getattr, self._vessel, 'surface_velocity_reference_frame')
         self._vessel_body_ref           = self._krpc.add_stream(getattr, self._vessel_body(), 'reference_frame')
         self._vessel_flight_bdy         = self._krpc.add_stream(self._vessel.flight, self._vessel_body_ref())
-        self._vessel_flight_srf         = self._krpc.add_stream(self._vessel.flight, self._vessel_surface_ref())
+        self._vessel_flight_srf         = self._krpc.add_stream(self._vessel.flight, self._vessel.surface_reference_frame)
         
         self._vessel_position_bdy       = self._krpc.add_stream(self._vessel.position, self._vessel_body_ref())
         self._vessel_vertical_speed     = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'vertical_speed')
+        self._vessel_rotation           = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'rotation')
         self._vessel_mass               = self._krpc.add_stream(getattr, self._vessel, 'mass')
         self._vessel_thrust             = self._krpc.add_stream(getattr, self._vessel, 'thrust')
         self._vessel_max_thrust         = self._krpc.add_stream(getattr, self._vessel, 'max_thrust')
@@ -156,8 +167,28 @@ class KPFlightController(QtCore.QObject):
         self._vessel_surface_altitude   = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'surface_altitude')
         self._vessel_latitude           = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'latitude')
         self._vessel_longitude          = self._krpc.add_stream(getattr, self._vessel_flight_bdy(), 'longitude')
-        
-        
+
+        # set up drawings
+        body_to_zenith_vec = self._krpc.space_center.transform_direction((5,0,0), self._vessel.surface_reference_frame, self._vessel.orbit.body.reference_frame)
+        offset_vessel_to_zenith_vec = vector_add(self._vessel_position_bdy(), body_to_zenith_vec)
+        self._dwg_dir_vessel_to_zenith = self._krpc.drawing.add_line(self._vessel_position_bdy(), offset_vessel_to_zenith_vec, self._vessel.orbit.body.reference_frame)
+        self._dwg_dir_vessel_to_zenith.color = (0.5, 0.0, 0.0)
+
+        self._dwg_dir_vessel_to_north = self._krpc.drawing.add_line(self._vessel_position_bdy(), offset_vessel_to_zenith_vec, self._vessel.orbit.body.reference_frame)
+        self._dwg_dir_vessel_to_north.color = (0.0, 0.5, 0.0)
+
+        self._dwg_dir_vessel_to_east = self._krpc.drawing.add_line(self._vessel_position_bdy(), offset_vessel_to_zenith_vec, self._vessel.orbit.body.reference_frame)
+        self._dwg_dir_vessel_to_east.color = (0.0, 0.0, 0.5)
+
+        #self._dwg_direction = self._krpc.drawing.add_line((0,0,0), (0,5,0), self._vessel.reference_frame, True)
+        #self._dwg_direction.color = (0.0, 1.0, 0.0)
+
+        self._dwg_velocity = self._krpc.drawing.add_line((0,0,0), (0,5,0), self._vessel.surface_velocity_reference_frame, True)
+        self._dwg_velocity.color = (1.0, 0.0, 1.0)
+
+        self._dwg_counter_vel = self._krpc.drawing.add_line(self._vessel_position_bdy(), offset_vessel_to_zenith_vec, self._vessel.orbit.body.reference_frame)
+        self._dwg_counter_vel.color = (0.0, 0.6, 0.7)
+
         self._log('Tracking vessel "{:s}"'.format(self._vessel.name))
         
         
@@ -181,6 +212,7 @@ class KPFlightController(QtCore.QObject):
         
         self._telemetry['vessel_position_bdy']      = self._vessel_position_bdy()
         self._telemetry['vessel_vertical_speed']    = self._vessel_vertical_speed()
+        self._telemetry['vessel_rotation']          = self._vessel_rotation()
         self._telemetry['vessel_mass']              = self._vessel_mass()
         self._telemetry['vessel_thrust']            = self._vessel_thrust()
         self._telemetry['vessel_max_thrust']        = self._vessel_max_thrust()
@@ -199,8 +231,49 @@ class KPFlightController(QtCore.QObject):
         self._telemetry['vessel_body_gravity'] = self._space_g * self._telemetry['vessel_body_mass'] / body_to_vessel_distance_sq
         self._telemetry['vessel_weight'] = self._telemetry['vessel_body_gravity'] * self._telemetry['vessel_mass']
         
-        velocity_rel_to_surface = self._krpc.space_center.transform_direction((0,1.0,0), self._telemetry['vessel_surface_vel_ref'], self._telemetry['vessel_surface_ref'])
-        srf_velocity_rel_to_surface = vector_project_onto_plane(velocity_rel_to_surface, (1.0, 0.0, 0.0))
+        #velocity_rel_to_surface = self._krpc.space_center.transform_direction((0,1.0,0), self._telemetry['vessel_surface_vel_ref'], self._telemetry['vessel_surface_ref'])
+        #srf_velocity_rel_to_surface = vector_project_onto_plane(velocity_rel_to_surface, (1.0, 0.0, 0.0))
+
+        # drawing
+        #body_to_zenith_vec = self._krpc.space_center.transform_direction((5,0,0), self._vessel.surface_reference_frame, self._vessel.orbit.body.reference_frame)
+        #offset_vessel_to_zenith_vec = vector_add(self._vessel_position_bdy(), body_to_zenith_vec)
+        body_to_vessel_norm = vector_normalize(self._telemetry['vessel_position_bdy'])
+        body_to_vessel_mag = vector_length(self._telemetry['vessel_position_bdy'])
+        offset_vessel_to_zenith_mag = body_to_vessel_mag + 5.0
+        offset_vessel_to_zenith_vec = vector_scale(body_to_vessel_norm, offset_vessel_to_zenith_mag)
+        self._dwg_dir_vessel_to_zenith.start = self._telemetry['vessel_position_bdy']
+        self._dwg_dir_vessel_to_zenith.end = offset_vessel_to_zenith_vec
+
+        vessel_to_north_vec = self._krpc.space_center.transform_direction((0,5,0), self._vessel.surface_reference_frame, self._vessel.orbit.body.reference_frame)
+        offset_vessel_to_north_vec = vector_add(self._telemetry['vessel_position_bdy'], vessel_to_north_vec)
+        self._dwg_dir_vessel_to_north.start = self._telemetry['vessel_position_bdy']
+        self._dwg_dir_vessel_to_north.end = offset_vessel_to_north_vec
+
+        vessel_to_east_vec = self._krpc.space_center.transform_direction((0,0,5), self._vessel.surface_reference_frame, self._vessel.orbit.body.reference_frame)
+        offset_vessel_to_east_vec = vector_add(self._telemetry['vessel_position_bdy'], vessel_to_east_vec)
+        self._dwg_dir_vessel_to_east.start = self._telemetry['vessel_position_bdy']
+        self._dwg_dir_vessel_to_east.end = offset_vessel_to_east_vec
+
+        vessel_velocity_rel_to_body = self._vessel.velocity(self._vessel.orbit.body.reference_frame)
+        hrz_velocity_north = vector_dot_product(vessel_velocity_rel_to_body, vector_normalize(vessel_to_north_vec))
+        hrz_velocity_east = vector_dot_product(vessel_velocity_rel_to_body, vector_normalize(vessel_to_east_vec))
+        hrz_velocity = vector_project_onto_plane(vessel_velocity_rel_to_body, self._telemetry['vessel_position_bdy'])
+        hrz_velocity_mag = vector_length(hrz_velocity)
+        hrz_velocity_norm = vector_normalize(hrz_velocity)
+
+        hrz_counter_velocity_norm = vector_scale(hrz_velocity_norm, -1.0)
+        hrz_counter_velocity_mag = hrz_velocity_mag if (hrz_velocity_mag < 5.0) else 5.0
+        hrz_counter_velocity = vector_scale(hrz_counter_velocity_norm, hrz_counter_velocity_mag)
+        counter_direction_zenith = 28.36
+        zenith_counter_velocity = vector_scale(body_to_vessel_norm, counter_direction_zenith)
+        self._counter_direction = vector_add(zenith_counter_velocity, hrz_counter_velocity)
+
+        angle = math.atan2(hrz_counter_velocity_mag, counter_direction_zenith)
+
+        self._dwg_counter_vel.start = self._telemetry['vessel_position_bdy']
+        self._dwg_counter_vel.end = vector_add(self._telemetry['vessel_position_bdy'], self._counter_direction)
+
+        print("N: {:7.3f}, E: {:7.3f}, a = {:7.3f}".format(hrz_velocity_north, hrz_velocity_east, math.degrees(angle)))
         
         # finish update
         self.telemetry_updated.emit(self._telemetry)
@@ -210,6 +283,13 @@ class KPFlightController(QtCore.QObject):
     def _control_update(self):
         if self._mission_program is not None:
             mp_id = self._mission_program.id
+
+            # engage autopilot
+            if mp_id == 'fwd_stabilize':
+                self._vessel_autopilot.engage()
+            else:
+                self._vessel_autopilot.disengage()
+
     
             if mp_id == 'full_manual':
                 return
@@ -267,7 +347,22 @@ class KPFlightController(QtCore.QObject):
                 
                     throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
                     self._vessel_control.throttle = throttle_cmd
+
+            # Control vertical speed while killing horizontal speed
+            elif mp_id == 'fwd_stabilize':
+                if self._telemetry['vessel_max_thrust'] > 0.0:
+                    # set control gains
+                    ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
+                    self.vertical_speed_ctrl.setProportionalGain(ku * 0.70)
+                    self.vertical_speed_ctrl.setIntegralGain(ku / 3.0)
+                    self.vertical_speed_ctrl.setDerivativeGain(ku / 50.0)
                     
+                    throttle_cmd = self.vertical_speed_ctrl.update(self._telemetry['vessel_vertical_speed'])
+                    self._vessel_control.throttle = throttle_cmd
+
+                    self._vessel_autopilot.reference_frame = self._vessel.orbit.body.reference_frame
+                    self._vessel_autopilot.target_direction = self._counter_direction
+                    self._vessel_autopilot.target_roll = math.nan
                     
                     
                     
@@ -489,7 +584,7 @@ class KPFlightController(QtCore.QObject):
         joystick_y = 0.0 if (joystick_y > -0.04 and joystick_y < 0.04) else joystick_y
         joystick_z = 0.0 if (joystick_z > -0.04 and joystick_z < 0.04) else joystick_z
 
-        print("RC Command: {:4s} {:5.2f} {:5.2f} {:5.2f}".format(hex(rc_cmd._button_state), joystick_x, joystick_y, joystick_z))
+        #print("RC Command: {:4s} {:5.2f} {:5.2f} {:5.2f}".format(hex(rc_cmd._button_state), joystick_x, joystick_y, joystick_z))
 
         self._rc_rocker_up_prev = self._rc_rocker_up
         self._rc_rocker_up = rc_cmd.btn_rocker_up
@@ -540,6 +635,7 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
         'vessel_weight',
         'vessel_forward_speed',
         'vessel_vertical_speed',
+        'vessel_rotation',
         'vessel_mean_altitude',
         'vessel_surface_altitude',
         'vessel_throttle',
@@ -574,6 +670,7 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
             ['Weight',            'N',        0.0],
             ['Forward Speed',     'm/s',      0.0],
             ['Vertical Speed',    'm/s',      0.0],
+            ['Rotation',          'n/a',      0.0],
             ['Altitude',          'm',        0.0],
             ['Radar Altitude',    'm',        0.0],
             ['Throttle',          'n/a',      0.0],
@@ -596,6 +693,10 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
             col = 2
             
             model_index = self.createIndex(row, col)
+
+            # handle special formatting
+            if parameter == 'vessel_rotation':
+                value = "({:.3f},{:.3f},{:.3f},{:.3f})".format(value[0], value[1], value[2], value[3])
             
             self.setData(model_index, QVariant(value), Qt.EditRole)
         

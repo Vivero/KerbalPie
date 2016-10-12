@@ -127,7 +127,7 @@ class KPMissionProgramsDatabase(QtCore.QObject):
             settings={
                 'vertical_speed_controller_setpoint_editable': True,
                 'vertical_speed_controller_gains_editable': False,
-                'altitude_controller_setpoint_editable': True,
+                'altitude_controller_setpoint_editable': False,
                 'altitude_controller_gains_editable': False,
             },
         )
