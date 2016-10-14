@@ -32,7 +32,7 @@ class Logger(threading.Thread):
     log_lock = Lock()
     debug = False
 
-    def __init__(self, log_dir=os.getcwd(), log_name="kerbalpie.log", debug_on=False):
+    def __init__(self, log_name, log_dir=os.getcwd(), debug_on=False):
         threading.Thread.__init__(self)
         self.log_start_time = time.time()
         self._log_sleep_time = 0.050 # seconds
@@ -41,7 +41,7 @@ class Logger(threading.Thread):
         
         self.log_full_filename = os.path.join(log_dir, log_name)
         
-        debug = debug_on
+        Logger.debug = debug_on
         
         
     def run(self):
@@ -84,7 +84,8 @@ class Logger(threading.Thread):
         else:
             log_dict = log_entry
             
-        print("LOG {:s} | {:s}".format(time.strftime("%H:%M:%S", time.localtime(current_time)), log_message))
+        if Logger.debug:
+            print("LOG {:s} | {:s}".format(time.strftime("%H:%M:%S", time.localtime(current_time)), log_message))
         
         # attempt to place in queue
         try:
