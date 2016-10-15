@@ -3,7 +3,7 @@
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=  I M P O R T   #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
-import math, time
+import collections, math, statistics, time
 from time import sleep
 
 from PyQt5 import QtCore
@@ -56,6 +56,74 @@ def mean(values_list):
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#  C L A S S E S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+#--- State Variable Register class
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+class StateVariable():
+
+
+    # C O N S T R U C T O R 
+    #===========================================================================
+    def __init__(self, initial_value=None, register_size=2):
+        register_size = max(2, register_size) # minimum register size is 2
+        self._shift_register = collections.deque(maxlen=register_size)
+        self._data_class = None
+
+        if initial_value is not None:
+            self._shift_register.append(initial_value)
+            self._data_class = initial_value.__class__
+        
+        
+    # M E T H O D S 
+    #===========================================================================
+    def length(self):
+        return len(self._shift_register)
+
+    def get(self):
+        return self._shift_register[-1] if (len(self._shift_register) > 0) else None
+
+    def get_mean(self):
+        return statistics.mean(self._shift_register) if len(self._shift_register) > 0 and ((self._data_class == float) or (self._data_class == int)) else None
+
+    def update(self, current_value):
+        if self._data_class is None:
+            self._data_class = current_value.__class__
+
+        if isinstance(current_value, self._data_class):
+            self._shift_register.append(current_value)
+
+    def delta(self):
+        return (self._shift_register[-1] - self._shift_register[-2]) if ((len(self._shift_register) > 1) and ((self._data_class == float) or (self._data_class == int))) else None
+
+    def has_changed(self, to_value=None):
+        if len(self._shift_register) > 1:
+            if to_value is not None:
+                # if we are comparing to a given value (that matches the data class)...
+                if to_value.__class__ != self._data_class:
+                    return None
+
+                if self._data_class == float:
+                    # compare with isclose, for floats
+                    return math.isclose(self._shift_register[-1], to_value, rel_tol=1.0e-6) and self.has_changed()
+                else:
+                    # compare with equality, otherwise
+                    return (self._shift_register[-1] == to_value) and self.has_changed()
+
+            else:
+                # if we are just checking if the latest value changed at all
+                if self._data_class == float:
+                    # compare with isclose, for floats
+                    return not math.isclose(self._shift_register[-1], self._shift_register[-2])
+                else:
+                    # compare with equality, otherwise
+                    return (self._shift_register[-1] != self._shift_register[-2])
+
+        else:
+            return False
+
+
+
+
 
 #--- Basic PID controller class
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
@@ -152,7 +220,7 @@ class KPRemoteControlState(QtCore.QObject):
         self.btn_pushbtn_green  = (button_state & (1 << 3)) != 0
         self.btn_rocker_up      = (button_state & (1 << 4)) != 0
         self.btn_rocker_down    = (button_state & (1 << 5)) != 0
-        self.btn_joystick_btn   = (button_state & (1 << 6)) != 0
+        self.btn_joystick       = (button_state & (1 << 6)) != 0
 
 
     def get_joystick(self, axis):
