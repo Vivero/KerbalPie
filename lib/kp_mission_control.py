@@ -120,10 +120,10 @@ class KPMissionProgramsDatabase(QtCore.QObject):
             },
         )
         
-        mp_forward_stabilize = KPMissionProgram(
-            id='fwd_stabilize',
-            name='Forward Stabilize',
-            description="Vessel will cancel all horizontal (relative to the planet's surface) speed in the forward/aft direction.",
+        mp_horizontal_stabilize = KPMissionProgram(
+            id='hrz_stabilize',
+            name='Horizontal Stabilize',
+            description="Vessel will cancel all horizontal (relative to the planet's surface) speed.",
             settings={
                 'vertical_speed_controller_setpoint_editable': True,
                 'vertical_speed_controller_gains_editable': False,
@@ -139,7 +139,7 @@ class KPMissionProgramsDatabase(QtCore.QObject):
             mp_altitude_manual,
             mp_altitude_auto,
             mp_controlled_descent,
-            mp_forward_stabilize,
+            mp_horizontal_stabilize,
         ]
         
         self._current_program = self.db[0]
@@ -153,6 +153,15 @@ class KPMissionProgramsDatabase(QtCore.QObject):
             self.current_program_updated.emit(self._current_program)
             
             self._log("Activated program {:2d}: {:s}".format(program_num, self._current_program.name))
+
+
+    def set_current_program_id(self, program_id):
+        program_ids = [mp.id for mp in self.db]
+
+        try:
+            self.set_current_program_num(program_ids.index(program_id))
+        except ValueError:
+            pass
                     
     
     

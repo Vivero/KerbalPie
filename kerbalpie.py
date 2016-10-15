@@ -21,7 +21,8 @@ from PyQt5.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 from lib.logger import Logger
 from lib.widgets.QPlot2D import QPlot2D, QPlot2DTime
 from lib.widgets.QPidController import QPidControllerPanel
-from lib.kp_flight_controller import KPFlightDataModel, KPFlightController
+from lib.kp_flight_controller import KPFlightController
+from lib.kp_flight_data import KPFlightDataModel
 from lib.kp_mission_control import KPMissionProgramsModel, KPMissionProgramsDatabase
 from lib.kp_serial_interface import KPSerialInterface
 from lib.kp_tools import *
@@ -151,6 +152,7 @@ class KerbalPie(QWidget):
         self.flightPlot_selection.addItems([
             "Vertical Speed",
             "Altitude"
+            "Attitude"
         ])
         
         self.flight_data_model = KPFlightDataModel(parent=self)
@@ -200,6 +202,8 @@ class KerbalPie(QWidget):
         self.mission_activateButton.clicked.connect(self.mission_activateButton_clicked)
         
         self.mission_program_db.set_current_program_num(0)
+
+        self._flight_ctrl.request_mp_change.connect(self.flight_requested_mp_change)
         
         # automatically start KRPC connection
         QTimer.singleShot(200, self.krpc_connectionButton_clicked)
@@ -308,6 +312,11 @@ class KerbalPie(QWidget):
         if self.mission_programTableView.currentIndex().column() == 0:
             current_selection = self.mission_programTableView.currentIndex().row()
             self.mission_program_db.set_current_program_num(current_selection)
+
+
+    @pyqtSlot(str)
+    def flight_requested_mp_change(self, mp_id):
+        self.mission_program_db.set_current_program_id(mp_id)
                 
         
     @pyqtSlot(dict)
