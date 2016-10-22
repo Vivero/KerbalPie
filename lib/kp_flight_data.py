@@ -1,4 +1,4 @@
-import collections, krpc, math, time
+import collections, krpc, math, re, time
 
 from time import sleep
 
@@ -7,8 +7,6 @@ from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal
 from PyQt5.QtCore import pyqtSlot
 
 from lib.kp_tools import *
-from lib.kp_mission_control import KPMissionProgram, KPMissionProgramsDatabase
-from lib.kp_serial_interface import KPSerialInterface
 from lib.logger import Logger
 from lib.widgets.QPidController import QPidController
 
@@ -36,11 +34,12 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
     subsys = 'FLIGHT'
         
     flight_data_lookup = [
+        'game_scene',
         'vessel_name',
-        'ut',
-        'vessel_body_name',
+        'space_ut',
+        'body_name',
+        'body_gravity',
         'vessel_mass',
-        'vessel_body_gravity',
         'vessel_weight',
         'vessel_forward_speed',
         'vessel_vertical_speed',
@@ -70,11 +69,12 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
         self._flight_data_header = ['Parameter', 'Units', 'Value']
         
         self._flight_data = [
+            ['Game Scene',        'n/a',      ''],
             ['Vessel Name',       'n/a',      ''],
             ['Universal Time',    's',        0.0],
             ['Planet Name',       'n/a',      ''],
-            ['Mass',              'kg',       0.0],
             ['Gravity',           'm/s^2',    0.0],
+            ['Mass',              'kg',       0.0],
             ['Weight',            'N',        0.0],
             ['Forward Speed',     'm/s',      0.0],
             ['Vertical Speed',    'm/s',      0.0],
@@ -95,17 +95,43 @@ class KPFlightDataModel(QtCore.QAbstractTableModel):
     # M E T H O D S 
     #===========================================================================
     def update_flight_data(self, parameter, value):
+        col = 2 # table column to update
+
         if parameter in KPFlightDataModel.flight_data_lookup:
             row = KPFlightDataModel.flight_data_lookup.index(parameter)
-            col = 2
             
             model_index = self.createIndex(row, col)
 
-            # handle special formatting
-            if parameter == 'vessel_rotation':
-                value = "({:.3f},{:.3f},{:.3f},{:.3f})".format(value[0], value[1], value[2], value[3])
-            
+            if value is None:
+                value = "n/a"
+
+            else:
+                # handle special formatting
+                if parameter == 'game_scene':
+                    try:
+                        value = re.search(r'GameScene\.(.*)', str(value)).group(1)
+                    except AttributeError:
+                        value = "?"
+
+                elif parameter == 'vessel_rotation':
+                    value = "({:.3f},{:.3f},{:.3f},{:.3f})".format(value[0], value[1], value[2], value[3])
+
             self.setData(model_index, QVariant(value), Qt.EditRole)
+
+        elif parameter == 'scheduler_timings':
+            # update the STS mean time
+            row = KPFlightDataModel.flight_data_lookup.index('sts_time')
+            model_index = self.createIndex(row, col)
+            sts_timing = "{:.3f}".format(value['sts'].get_mean())
+            self.setData(model_index, QVariant(sts_timing), Qt.EditRole)
+
+            # update the LTS mean time
+            row = KPFlightDataModel.flight_data_lookup.index('lts_time')
+            model_index = self.createIndex(row, col)
+            lts_timing = "{:.3f}".format(value['lts'].get_mean())
+            self.setData(model_index, QVariant(lts_timing), Qt.EditRole)
+
+
         
         
     # O V E R R I D E   M E T H O D S 

@@ -13,6 +13,7 @@ from lib.logger import Logger
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#  C L A S S E S   =#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
+
 #--- Mission Program definition
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 class KPMissionProgram(QtCore.QObject):
@@ -32,21 +33,66 @@ class KPMissionProgram(QtCore.QObject):
 
 
 
+#--- Mission Program controller
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+class KPMissionController(QtCore.QObject):
+
+    subsys = 'MP_CTRL'
+        
+    # S I G N A L S 
+    #===========================================================================
+    active_mp_updated = pyqtSignal(KPMissionProgram)
+
+    
+    # C O N S T R U C T O R 
+    #===========================================================================
+    def __init__(self, **kwds):
+        super(KPMissionController, self).__init__(**kwds)
+
+        self.mp_db = KPMissionProgramsDatabase(parent=self)
+        
+        self.active_mp = self.mp_db.get_default_mp()
+
+
+    # M E T H O D S 
+    #===========================================================================
+    def set_active_mp(self, mp_id):
+        mp = self.mp_db.get_mp(mp_id)
+
+        if mp is not None:
+            self.active_mp = mp
+
+            for mp in self.mp_db._database:
+                mp.state = 'enabled' if (mp.id == self.active_mp.id) else 'disabled'
+
+            self.active_mp_updated.emit(self.active_mp)
+            
+            self._log("Activated program: {:s}".format(self.active_mp.name))
+
+
+    def set_default_mp(self):
+        self.set_active_mp(self.mp_db._default_mp_id)
+    
+    
+    # H E L P E R   F U N C T I O N S 
+    #===========================================================================
+    def _log(self, log_message, log_type='info', log_data=None):
+        Logger.log(KPMissionController.subsys, log_message, log_type, log_data)
+
+
+
 #--- Mission Programs database
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 class KPMissionProgramsDatabase(QtCore.QObject):
 
     subsys = 'MP_DB'
         
-    # S I G N A L S 
-    #===========================================================================
-    current_program_updated = pyqtSignal(KPMissionProgram)
-    
-    
     # C O N S T R U C T O R 
     #===========================================================================
     def __init__(self, **kwds):
         super(KPMissionProgramsDatabase, self).__init__(**kwds)
+
+        self._default_mp_id = 'full_manual'
         
         mp_full_manual = KPMissionProgram(
             id='full_manual',
@@ -132,7 +178,7 @@ class KPMissionProgramsDatabase(QtCore.QObject):
             },
         )
         
-        self.db = [
+        self._database = [
             mp_full_manual,
             mp_vspeed_manual,
             mp_vspeed_auto,
@@ -142,26 +188,27 @@ class KPMissionProgramsDatabase(QtCore.QObject):
             mp_horizontal_stabilize,
         ]
         
-        self._current_program = self.db[0]
-        
     
     # M E T H O D S 
     #===========================================================================
-    def set_current_program_num(self, program_num):
-        if program_num < len(self.db):
-            self._current_program = self.db[program_num]
-            self.current_program_updated.emit(self._current_program)
-            
-            self._log("Activated program {:2d}: {:s}".format(program_num, self._current_program.name))
+    def get_default_mp(self):
+        return self.get_mp(self._default_mp_id)
 
+    def get_mp(self, mp_id):
+        mission_program = None
+        if isinstance(mp_id, int) and mp_id < len(self._database):
+            mission_program = self._database[mp_id]
 
-    def set_current_program_id(self, program_id):
-        program_ids = [mp.id for mp in self.db]
+        elif isinstance(mp_id, str):
+            for mp in self._database:
+                if mp.id == mp_id:
+                    mission_program = mp
+                    break
 
-        try:
-            self.set_current_program_num(program_ids.index(program_id))
-        except ValueError:
-            pass
+        if mission_program is None:
+            self._log_warning("Could not find Mission Program ID='{:s}'".format(str(mp_id)))
+
+        return mission_program
                     
     
     
@@ -181,6 +228,9 @@ class KPMissionProgramsDatabase(QtCore.QObject):
     #===========================================================================
     def _log(self, log_message, log_type='info', log_data=None):
         Logger.log(KPMissionProgramsDatabase.subsys, log_message, log_type, log_data)
+        
+    def _log_warning(self, log_message, log_data=None):
+        Logger.log_warning(KPMissionProgramsDatabase.subsys, log_message, log_data)
     
     
 
@@ -193,12 +243,12 @@ class KPMissionProgramsModel(QtCore.QAbstractTableModel):
     
     # C O N S T R U C T O R 
     #===========================================================================
-    def __init__(self, mp_database, **kwds):
+    def __init__(self, mp_db, **kwds):
         super(KPMissionProgramsModel, self).__init__(**kwds)
         
         # set up model data
         self._mp_table_header = ['Program Name', 'State']
-        self._mp_database = mp_database
+        self._mp_database = mp_db
         
         
     # M E T H O D S 
@@ -208,7 +258,7 @@ class KPMissionProgramsModel(QtCore.QAbstractTableModel):
     # O V E R R I D E   M E T H O D S 
     #===========================================================================
     def rowCount(self, parent):
-        return len(self._mp_database.db)
+        return len(self._mp_database._database)
             
             
     def columnCount(self, parent):
@@ -221,29 +271,29 @@ class KPMissionProgramsModel(QtCore.QAbstractTableModel):
             col = index.column()
             
             if col == 0:
-                return QVariant(self._mp_database.db[row].name)
+                return QVariant(self._mp_database.get_mp(row).name)
             elif col == 1:
-                return QVariant(self._mp_database.db[row].state)
+                return QVariant(self._mp_database.get_mp(row).state)
             
         return QVariant()
-        
-        
+
+
     def headerData(self, section, orientation, role):
         if role == Qt.DisplayRole:
             if orientation == Qt.Horizontal:
                 return QVariant(self._mp_table_header[section])
                 
         return QVariant()
-        
-        
+
+
     def flags(self, index):
         col = index.column()
         flags = Qt.ItemIsEnabled
         if col == 0:
             flags = flags | Qt.ItemIsSelectable
         return flags
-        
-        
+
+    '''
     def setData(self, index, value, role):
         if index.isValid() and role == Qt.EditRole:
             row = index.row()
@@ -251,39 +301,9 @@ class KPMissionProgramsModel(QtCore.QAbstractTableModel):
             
             if col == 0 or col == 1:
                 if col == 0:
-                    self._mp_database.db[row].name = value
+                    self._mp_database.get_mp(row).name = value
                 elif col == 1:
-                    self._mp_database.db[row].state = value
+                    self._mp_database.get_mp(row).state = value
             
                 self.dataChanged.emit(index, index)
-            
-        
-        
-    # P R I V A T E   M E T H O D S 
-    #===========================================================================
-    def _set_program_state(self, program_num, state):
-        if program_num < len(self._mp_database.db):
-            row = program_num
-            col = 1
-            
-            model_index = self.createIndex(row, col)
-            
-            self.setData(model_index, QVariant(state), Qt.EditRole)
-    
-    
-    # S L O T S 
-    #===========================================================================
-    @pyqtSlot(KPMissionProgram)
-    def set_active_program(self, program):
-        for mp_idx in range(len(self._mp_database.db)):
-            if program.id == self._mp_database.db[mp_idx].id:
-                self._set_program_state(mp_idx, 'enabled')
-            else:
-                self._set_program_state(mp_idx, 'disabled')
-        
-        
-    # H E L P E R   F U N C T I O N S 
-    #===========================================================================
-    
-    
-    
+    '''

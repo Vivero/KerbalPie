@@ -23,7 +23,7 @@ from lib.widgets.QPlot2D import QPlot2D, QPlot2DTime
 from lib.widgets.QPidController import QPidControllerPanel
 from lib.kp_flight_controller import KPFlightController
 from lib.kp_flight_data import KPFlightDataModel
-from lib.kp_mission_control import KPMissionProgramsModel, KPMissionProgramsDatabase
+from lib.kp_mission_controller import KPMissionProgram, KPMissionProgramsModel, KPMissionProgramsDatabase
 from lib.kp_serial_interface import KPSerialInterface
 from lib.kp_tools import *
 
@@ -115,9 +115,9 @@ class KerbalPie(QWidget):
         # PID controller panels
         self.flightControl_tuningTabGroup = QTabWidget(parent=None)
         self.flightControl_pidControllerPanels = []
-        for ctrl in self._flight_ctrl.controllers:
-            ctrl_panel = QPidControllerPanel(ctrl, parent=None)
-            self.flightControl_tuningTabGroup.addTab(ctrl_panel, ctrl.name)
+        for controller in self._flight_ctrl.ctrl.values():
+            ctrl_panel = QPidControllerPanel(controller, parent=None)
+            self.flightControl_tuningTabGroup.addTab(ctrl_panel, controller.name)
             self.flightControl_pidControllerPanels.append(ctrl_panel)
         self.flightControl_tuningGroup.layout().addWidget(self.flightControl_tuningTabGroup)
         
@@ -138,7 +138,7 @@ class KerbalPie(QWidget):
         self.krpc_rpcPortEdit.textChanged.connect(self.krpc_client_rpc_port_changed)
         self.krpc_streamPortEdit.textChanged.connect(self.krpc_client_stream_port_changed)
 
-        self._serial_iface.rc_command.connect(self._flight_ctrl.rc_command_received)
+        #self._serial_iface.rc_command.connect(self._flight_ctrl.rc_command_received)
         
         # start threads
         self._flight_thread.start()
@@ -187,23 +187,19 @@ class KerbalPie(QWidget):
         
         # mission programs table
         #-----------------------------------------------------------------------
-        self.mission_program_db = KPMissionProgramsDatabase(parent=self)
+        self.mission_program_db = self._flight_ctrl.mission_ctrl.mp_db
         
-        self.mission_programs_model = KPMissionProgramsModel(mp_database=self.mission_program_db, parent=self)
+        self.mission_programs_model = KPMissionProgramsModel(mp_db=self.mission_program_db, parent=self)
         self.mission_programTableView.setModel(self.mission_programs_model)
         self.mission_programTableView.verticalHeader().setVisible(False)
         self.mission_programTableView.verticalHeader().sectionResizeMode(QHeaderView.Fixed)
         self.mission_programTableView.resizeColumnsToContents()
         self.mission_programTableView.resizeRowsToContents()
         self.mission_programTableView.setSelectionMode(QAbstractItemView.SingleSelection)
-        
-        self.mission_program_db.current_program_updated.connect(self.mission_programs_model.set_active_program)
-        self.mission_program_db.current_program_updated.connect(self._flight_ctrl.set_active_program)
-        self.mission_activateButton.clicked.connect(self.mission_activateButton_clicked)
-        
-        self.mission_program_db.set_current_program_num(0)
 
-        self._flight_ctrl.request_mp_change.connect(self.flight_requested_mp_change)
+        self._flight_ctrl.mission_ctrl.active_mp_updated.connect(self.mission_program_changed)
+
+        self.mission_activateButton.clicked.connect(self.mission_activateButton_clicked)
         
         # automatically start KRPC connection
         QTimer.singleShot(200, self.krpc_connectionButton_clicked)
@@ -211,42 +207,10 @@ class KerbalPie(QWidget):
         # automatically start serial port connection
         QTimer.singleShot(300, self.serial_connectionButton_clicked)
         
-        
-        # debug
-        #-----------------------------------------------------------------------
-        
-        self.radarPlotter = QPlot2D(
-            xMin=-1.0,
-            xMax=1.0,
-            yMin=-1.0,
-            yMax=1.0,
-            xOriginValue=0.0,
-            yOriginValue=0.0,
-            xTickInterval=0.1,
-            yTickInterval=0.1)
-            
-        radarLayout = QVBoxLayout()
-        radarLayout.addWidget(self.radarPlotter)
-        self.radarTab.setLayout(radarLayout)
-        
-        self._radarPlotColorBins = 60
-        radarPlotColor = QColor()
-        for i in range(self._radarPlotColorBins):
-            hue = map_value_to_scale(float(i), 0.0, float(self._radarPlotColorBins), 0.0, 0.2) 
-            radarPlotColor.setHsvF(hue, 1.0, 1.0)
-            self.radarPlotter.setPlotPen(i, QPen(radarPlotColor, 15.0, Qt.SolidLine, Qt.RoundCap))
-        self.radarPlotter.setPlotPen(self._radarPlotColorBins, QPen(Qt.blue, 15.0, Qt.SolidLine, Qt.RoundCap))
-                
-        #self.radarPlotter.update()
            
     
     # S L O T S 
     #===========================================================================
-    @pyqtSlot()
-    def update_plots(self):
-        pass
-            
-    
     @pyqtSlot()
     def serial_connected(self):
         self.serial_connectionLabel.setText("Status: Connected")
@@ -274,6 +238,7 @@ class KerbalPie(QWidget):
         else:
             self.serial_iface_begin_disconnect.emit()
     
+
     @pyqtSlot()
     def krpc_client_connected(self):
         self.krpc_connectionLabel.setText("Status: Connected")
@@ -307,25 +272,26 @@ class KerbalPie(QWidget):
         else:
             self.krpc_client_begin_disconnect.emit()
             
+
+    @pyqtSlot(KPMissionProgram)
+    def mission_program_changed(self, mp):
+        top_left  = self.mission_programs_model.index(0, 0)
+        btm_right = self.mission_programs_model.index(
+            self.mission_programs_model.rowCount(parent=self.mission_programs_model.parent), 
+            self.mission_programs_model.columnCount(parent=self.mission_programs_model.parent))
+        self.mission_programs_model.dataChanged.emit(top_left, btm_right)
+
     @pyqtSlot()
     def mission_activateButton_clicked(self):
-        if self.mission_programTableView.currentIndex().column() == 0:
-            current_selection = self.mission_programTableView.currentIndex().row()
-            self.mission_program_db.set_current_program_num(current_selection)
+        self._flight_ctrl.mission_ctrl.set_active_mp(self.mission_programTableView.currentIndex().row())
 
-
-    @pyqtSlot(str)
-    def flight_requested_mp_change(self, mp_id):
-        self.mission_program_db.set_current_program_id(mp_id)
-                
         
     @pyqtSlot(dict)
     def flight_telemetry_updated(self, telemetry_dict):
-        #self.log_logTextEdit.clear()
-        
+        #print("flight_telemetry_updated")
+
         for param in telemetry_dict.keys():
-            if param in KPFlightDataModel.flight_data_lookup:
-                self.flight_data_model.update_flight_data(param, telemetry_dict[param])
+            self.flight_data_model.update_flight_data(param, telemetry_dict[param])
                 
         # plotter
         plotter_current_selection = self.flightPlot_selection.currentText()
@@ -334,41 +300,6 @@ class KerbalPie(QWidget):
         elif plotter_current_selection == 'Altitude':
             self.controllerPlotter.updatePlot(0, telemetry_dict['vessel_mean_altitude'])
             
-        # radar
-        '''
-        self.radarPlotter.clearPlots()
-        
-        #surface_height_at_vessel = telemetry_dict['vessel_surface_height']
-        radar_altitude_map = telemetry_dict['surface_height_map']
-        
-        #print(radar_altitude_map)
-        
-        radar_altitude_map_min = min([min(a) for a in radar_altitude_map])
-        radar_altitude_map_max = max([max(a) for a in radar_altitude_map])
-        
-        if radar_altitude_map_min == 0.0 and radar_altitude_map_max == 0.0:
-            radar_altitude_map_min = -1.0
-            radar_altitude_map_max = 1.0
-        
-        s = len(telemetry_dict['surface_height_map'][0])
-        for y in range(s):
-            for x in range(s):
-                x_val = map_value_to_scale(float(x) + 0.5, 0.0, s, -1.0, 1.0)
-                y_val = map_value_to_scale(float(y) + 0.5, 0.0, s, -1.0, 1.0)
-                alt = radar_altitude_map[y][x]
-                bin = map_value_to_scale(alt, radar_altitude_map_min, radar_altitude_map_max, 0.1, self._radarPlotColorBins - 0.1)
-                #bin = map_value_to_scale(x_val, -1.0, 1.0, 0.1, 19.9)
-                
-                bin = int(bin)
-                
-                if alt > (telemetry_dict['vessel_surface_height'] - 1.0) and alt < (telemetry_dict['vessel_surface_height'] + 1.0):
-                    self.radarPlotter.updatePlot(self._radarPlotColorBins, (x_val, y_val))
-                else:
-                    self.radarPlotter.updatePlot(bin, (x_val, y_val))
-                
-        self.radarPlotter.update()
-        '''
-        
         
     @pyqtSlot('QString')
     def flightPlot_selection_changed(self, text):
