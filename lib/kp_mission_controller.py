@@ -7,6 +7,7 @@ from PyQt5.QtCore import QCoreApplication, Qt, QTimer, QVariant, pyqtSignal
 from PyQt5.QtCore import pyqtSlot
 
 from lib.logger import Logger
+from lib.kp_tools import *
 
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
@@ -49,22 +50,45 @@ class KPMissionController(QtCore.QObject):
     def __init__(self, **kwds):
         super(KPMissionController, self).__init__(**kwds)
 
+        # create mission programs database
         self.mp_db = KPMissionProgramsDatabase(parent=self)
         
+        # set the default mission program
         self.active_mp = self.mp_db.get_default_mp()
+
+        # remote control states
+        #-------------------------------
+        self._rc_joystick_x = 0.0
+        self._rc_joystick_y = 0.0
+        self._rc_joystick_z = 0.0
+
+        # control parameters
+        #-------------------------------
+        self._control               = {}
+        self._control['yaw']        = 0.0
+        self._control['pitch']      = 0.0
+        self._control['roll']       = 0.0
+
+        # flight data
+        #-------------------------------
+        self._telemetry             = {}
 
 
     # M E T H O D S 
     #===========================================================================
     def set_active_mp(self, mp_id):
+        # try to get the Mission Program, given the id
         mp = self.mp_db.get_mp(mp_id)
-
         if mp is not None:
+
+            # set as the active MP
             self.active_mp = mp
 
+            # update the state of all MP's in db
             for mp in self.mp_db._database:
                 mp.state = 'enabled' if (mp.id == self.active_mp.id) else 'disabled'
 
+            # notify MP has changed
             self.active_mp_updated.emit(self.active_mp)
             
             self._log("Activated program: {:s}".format(self.active_mp.name))
@@ -72,12 +96,57 @@ class KPMissionController(QtCore.QObject):
 
     def set_default_mp(self):
         self.set_active_mp(self.mp_db._default_mp_id)
+
+
+    def get_controls(self):
+        self._control['yaw']        = self._rc_joystick_x
+        self._control['pitch']      = self._rc_joystick_y
+        self._control['roll']       = self._rc_joystick_z
+
+        return self._control
     
     
     # H E L P E R   F U N C T I O N S 
     #===========================================================================
     def _log(self, log_message, log_type='info', log_data=None):
         Logger.log(KPMissionController.subsys, log_message, log_type, log_data)
+    
+    
+    # S L O T S 
+    #===========================================================================
+    pyqtSlot(dict)
+    def telemetry_update(self, telemetry):
+        self._telemetry = telemetry
+
+
+    pyqtSlot(KPRemoteControlState)
+    def rc_command_update(self, rc_cmd):
+        # register master switches
+        #self._rc_master_switch_engine    = rc_cmd.btn_switch_red
+        #self._rc_master_switch_autopilot = rc_cmd.btn_switch_blue
+
+        # map joystick values to [-1.0, 1.0]
+        joystick_x = (float(rc_cmd.joystick['x']) / 1023.0 - 0.5) * 2.0
+        joystick_y = (float(rc_cmd.joystick['y']) / 1023.0 - 0.5) * -2.0
+        joystick_z = (float(rc_cmd.joystick['z']) / 1023.0 - 0.5) * -2.0
+
+        # filter out dead-zone
+        self._rc_joystick_x = 0.0 if (joystick_x > -0.04 and joystick_x < 0.04) else joystick_x
+        self._rc_joystick_y = 0.0 if (joystick_y > -0.04 and joystick_y < 0.04) else joystick_y
+        self._rc_joystick_z = 0.0 if (joystick_z > -0.04 and joystick_z < 0.04) else joystick_z
+
+        #self._rc_button_stabilize = rc_cmd.btn_joystick
+        #self._rc_button_increment.update(rc_cmd.btn_rocker_up)
+        #self._rc_button_decrement.update(rc_cmd.btn_rocker_down)
+
+        # control vertical speed
+        '''
+        if self._rc_button_decrement.has_changed(to_value=True):
+            self.ctrl_vertical_speed.setSetpoint(self.ctrl_vertical_speed._pid.set_point - 0.5)
+
+        if self._rc_button_increment.has_changed(to_value=True):
+            self.ctrl_vertical_speed.setSetpoint(self.ctrl_vertical_speed._pid.set_point + 0.5)
+        '''
 
 
 

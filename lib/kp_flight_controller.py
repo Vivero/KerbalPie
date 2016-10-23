@@ -23,7 +23,7 @@ from lib.widgets.QPidController import QPidController
 class KPFlightController(QtCore.QObject):
 
     subsys = 'CONTROL'
-    sts_period  =  0.006    # Short Term Scheduler period (seconds)
+    sts_period  =  0.020    # Short Term Scheduler period (seconds)
     lts_period  =  0.100    # Long Term Scheduler period (seconds)
     xlts_period = 10.000    # Extra-Long Term Scheduler period (seconds)
         
@@ -53,6 +53,7 @@ class KPFlightController(QtCore.QObject):
         # mission controller
         #-------------------------------
         self.mission_ctrl = KPMissionController(parent=self)
+        self.telemetry_updated.connect(self.mission_ctrl.telemetry_update)
         
         # KRPC client
         #-------------------------------
@@ -296,6 +297,15 @@ class KPFlightController(QtCore.QObject):
             self._remove_telemetry()
             self._setup_telemetry()
 
+
+    def _control_update(self):
+        control_commands = self.mission_ctrl.get_controls()
+
+        # issue attitude commands
+        self._telemetry['vessel_control'].yaw       = control_commands['yaw']
+        self._telemetry['vessel_control'].pitch     = control_commands['pitch']
+        self._telemetry['vessel_control'].roll      = control_commands['roll']
+
     
     def _krpc_heartbeat(self):
         try:
@@ -331,6 +341,7 @@ class KPFlightController(QtCore.QObject):
 
                 else:
                     self._sts_telemetry_update()
+                    self._control_update()
 
             else:
                 # otherwise, unset the active vessel and telemetry

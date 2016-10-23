@@ -160,18 +160,9 @@ class KPSerialInterface(QtCore.QObject):
     def read_data(self):
         rx_bytes = self._serial.readAll()
 
-        #print("len = {:3d}".format(len(self._rx_buffer)))
-        #print(rx_bytes.data())
-
         for b in rx_bytes.data():
              self._rx_buffer.append(b)
 
-        '''
-        try:
-            print(self._rx_buffer)
-        except Exception as e:
-            self._log_exception('EXCEPTION! {:s}'.format(str(e)), e)
-        '''
 
     @pyqtSlot()
     def parse_rx_buffer(self):
@@ -208,10 +199,6 @@ class KPSerialInterface(QtCore.QObject):
                 message.append(self._rx_buffer.popleft())
 
             self._parse_message(message)
-
-
-
-
 
         
     @pyqtSlot()

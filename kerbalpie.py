@@ -151,8 +151,8 @@ class KerbalPie(QWidget):
         # gui items
         self.flightPlot_selection.addItems([
             "Vertical Speed",
-            "Altitude"
-            "Attitude"
+            "Altitude",
+            "Attitude",
         ])
         
         self.flight_data_model = KPFlightDataModel(parent=self)
@@ -197,8 +197,9 @@ class KerbalPie(QWidget):
         self.mission_programTableView.resizeRowsToContents()
         self.mission_programTableView.setSelectionMode(QAbstractItemView.SingleSelection)
 
+        # connect signals
+        self._serial_iface.rc_command.connect(self._flight_ctrl.mission_ctrl.rc_command_update)
         self._flight_ctrl.mission_ctrl.active_mp_updated.connect(self.mission_program_changed)
-
         self.mission_activateButton.clicked.connect(self.mission_activateButton_clicked)
         
         # automatically start KRPC connection
@@ -290,6 +291,7 @@ class KerbalPie(QWidget):
     def flight_telemetry_updated(self, telemetry_dict):
         #print("flight_telemetry_updated")
 
+        # update the flight data table
         for param in telemetry_dict.keys():
             self.flight_data_model.update_flight_data(param, telemetry_dict[param])
                 
