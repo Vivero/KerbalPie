@@ -17,7 +17,7 @@
    <item row="0" column="0">
     <widget class="QTabWidget" name="KP_tabWidget">
      <property name="currentIndex">
-      <number>0</number>
+      <number>4</number>
      </property>
      <widget class="QWidget" name="remoteTab">
       <attribute name="title">
@@ -228,11 +228,6 @@
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="hidTab">
-      <attribute name="title">
-       <string>HID</string>
-      </attribute>
-     </widget>
      <widget class="QWidget" name="missionTab">
       <attribute name="title">
        <string>Mission Control</string>
@@ -347,6 +342,11 @@
      <widget class="QWidget" name="radarTab">
       <attribute name="title">
        <string>Radar</string>
+      </attribute>
+     </widget>
+     <widget class="QWidget" name="simulationTab">
+      <attribute name="title">
+       <string>Page</string>
       </attribute>
      </widget>
      <widget class="QWidget" name="logTab">
