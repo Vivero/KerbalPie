@@ -47,7 +47,7 @@ class KPMissionController(QtCore.QObject):
     
     # C O N S T R U C T O R 
     #===========================================================================
-    def __init__(self, **kwds):
+    def __init__(self, automatic_controllers, **kwds):
         super(KPMissionController, self).__init__(**kwds)
 
         # create mission programs database
@@ -55,6 +55,10 @@ class KPMissionController(QtCore.QObject):
         
         # set the default mission program
         self.active_mp = self.mp_db.get_default_mp()
+
+        # automatic controllers
+        #-------------------------------
+        self._automatic_ctrl = automatic_controllers
 
         # remote control states
         #-------------------------------
@@ -64,14 +68,15 @@ class KPMissionController(QtCore.QObject):
 
         # control parameters
         #-------------------------------
-        self._control               = {}
-        self._control['yaw']        = 0.0
-        self._control['pitch']      = 0.0
-        self._control['roll']       = 0.0
+        self._control                   = {}
+        self._control['yaw']            = 0.0
+        self._control['pitch']          = 0.0
+        self._control['roll']           = 0.0
+        self._control['throttle_cmd']   = False
 
         # flight data
         #-------------------------------
-        self._telemetry             = {}
+        self._telemetry                 = {}
 
 
     # M E T H O D S 
@@ -99,11 +104,56 @@ class KPMissionController(QtCore.QObject):
 
 
     def get_controls(self):
-        self._control['yaw']        = self._rc_joystick_x
-        self._control['pitch']      = self._rc_joystick_y
-        self._control['roll']       = self._rc_joystick_z
+        self._control['yaw']            = self._rc_joystick_x
+        self._control['pitch']          = self._rc_joystick_y
+        self._control['roll']           = self._rc_joystick_z
+        self._control['throttle_cmd']   = False
+        self._control['attitude_cmd']   = False
+
+        # execute mission program controls
+        mp_id = self.active_mp.id
+
+        if mp_id == 'vspeed_manual':
+            self._control['throttle_cmd'] = True
+
+        elif mp_id == 'vspeed_auto':
+            self._tune_vspeed_by_twr()
+            self._control['throttle_cmd'] = True
+
+        elif mp_id == 'altitude_manual':
+            vspeed_cmd = self._automatic_ctrl['altitude'].getOutputValue()
+            self._automatic_ctrl['vspeed'].setSetpoint(vspeed_cmd)
+            self._control['throttle_cmd'] = True
+
+        elif mp_id == 'altitude_auto':
+            vspeed_cmd = self._automatic_ctrl['altitude'].getOutputValue()
+            self._tune_vspeed_by_twr()
+            self._automatic_ctrl['vspeed'].setSetpoint(vspeed_cmd)
+            self._control['throttle_cmd'] = True
+
+        elif mp_id == 'controlled_descent':
+            self._tune_vspeed_by_twr()
+            self._automatic_ctrl['vspeed'].setSetpoint(self._telemetry['vessel_surface_altitude'] / -12.0 - 1.0)
+            self._control['throttle_cmd'] = True
+
+        elif mp_id == 'hrz_stabilize':
+            self._tune_vspeed_by_twr()
+            self._control['throttle_cmd'] = True
+            self._control['attitude_cmd'] = True
+
 
         return self._control
+    
+    
+    # P R I V A T E   M E T H O D S 
+    #===========================================================================
+    def _tune_vspeed_by_twr(self):
+        # set control gains according to Thrust-to-Weight ratio
+        if self._telemetry['vessel_max_thrust'] > 0.0:
+            ku = self._telemetry['vessel_weight'] / self._telemetry['vessel_max_thrust']
+            self._automatic_ctrl['vspeed'].setProportionalGain(ku * 0.70)
+            self._automatic_ctrl['vspeed'].setIntegralGain(ku / 3.0)
+            self._automatic_ctrl['vspeed'].setDerivativeGain(ku / 50.0)
     
     
     # H E L P E R   F U N C T I O N S 

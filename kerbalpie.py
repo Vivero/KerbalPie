@@ -171,11 +171,11 @@ class KerbalPie(QWidget):
         
         self.controllerPlotter = QPlot2DTime(
             timeSpan=30.0,
-            yMin=-2.0,
-            yMax=2.0,
+            yMin=-6.0,
+            yMax=6.0,
             yOriginValue=0.0,
             xTickInterval=5.0,
-            yTickInterval=0.5,
+            yTickInterval=1.0,
             labelFont=QFont("Segoe UI", 10),
             refreshRate=0.1)
         self.controllerPlotter.setPlotDrawMethod(0, 'line')
@@ -307,9 +307,9 @@ class KerbalPie(QWidget):
     def flightPlot_selection_changed(self, text):
         self.controllerPlotter.clearPlots()
         if text == 'Vertical Speed':
-            self.controllerPlotter.setYMin(-2.0)
-            self.controllerPlotter.setYMax(2.0)
-            self.controllerPlotter.setYTickInterval(0.5)
+            self.controllerPlotter.setYMin(-6.0)
+            self.controllerPlotter.setYMax(6.0)
+            self.controllerPlotter.setYTickInterval(1.0)
         elif text == 'Altitude':
             self.controllerPlotter.setYMin(70.0)
             self.controllerPlotter.setYMax(200.0)

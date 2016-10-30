@@ -50,11 +50,6 @@ class KPFlightController(QtCore.QObject):
         #-------------------------------
         self.terminate = False
         
-        # mission controller
-        #-------------------------------
-        self.mission_ctrl = KPMissionController(parent=self)
-        self.telemetry_updated.connect(self.mission_ctrl.telemetry_update)
-        
         # KRPC client
         #-------------------------------
         self._krpc                                  = None
@@ -84,6 +79,7 @@ class KPFlightController(QtCore.QObject):
         self._telemetry['vessel_srf_reff']          = None
         self._telemetry['vessel_srf_vel_reff']      = None
         self._telemetry['vessel_position']          = None
+        self._telemetry['vessel_velocity']          = None
         self._telemetry['vessel_mass']              = 0.0
         self._telemetry['vessel_thrust']            = 0.0
         self._telemetry['vessel_max_thrust']        = 0.0
@@ -95,6 +91,7 @@ class KPFlightController(QtCore.QObject):
         self._telemetry['vessel_latitude']          = None
         self._telemetry['vessel_longitude']         = None
         self._telemetry['vessel_weight']            = 0.0
+        self._telemetry['vessel_stabilize_vector']  = None
         self._telemetry['body']                     = StateVariable()
         self._telemetry['body_name']                = None
         self._telemetry['body_mass']                = 0.0
@@ -138,7 +135,7 @@ class KPFlightController(QtCore.QObject):
             parent=self)
 
         ctrl_altitude = QPidController(
-            kp=1.5, 
+            kp=2.0, 
             ki=0.005, 
             kd=0.005, 
             output_min=-5.0, 
@@ -152,7 +149,7 @@ class KPFlightController(QtCore.QObject):
             ki=0.005, 
             kd=0.005, 
             output_min=0.0, 
-            output_max=5.0, 
+            output_max=math.radians(30.0), 
             set_point=0.0, 
             name="Attitude Controller", 
             parent=self)
@@ -160,6 +157,11 @@ class KPFlightController(QtCore.QObject):
         self.ctrl['vspeed']                         = ctrl_vertical_speed
         self.ctrl['altitude']                       = ctrl_altitude
         self.ctrl['attitude']                       = ctrl_attitude
+        
+        # mission controller
+        #-------------------------------
+        self.mission_ctrl = KPMissionController(self.ctrl, parent=self)
+        self.telemetry_updated.connect(self.mission_ctrl.telemetry_update)
         
         # thread schedulers
         #-------------------------------
@@ -243,6 +245,7 @@ class KPFlightController(QtCore.QObject):
         # add telemetry streams
         self._streams['space_ut']                   = self._krpc.add_stream(getattr, self._krpc.space_center, 'ut')
         self._streams['vessel_position']            = self._krpc.add_stream(vessel.position, body.reference_frame)
+        self._streams['vessel_velocity']            = self._krpc.add_stream(vessel.velocity, body.reference_frame)
         self._streams['vessel_mass']                = self._krpc.add_stream(getattr, vessel, 'mass')
         self._streams['vessel_thrust']              = self._krpc.add_stream(getattr, vessel, 'thrust')
         self._streams['vessel_max_thrust']          = self._krpc.add_stream(getattr, vessel, 'max_thrust')
@@ -260,6 +263,7 @@ class KPFlightController(QtCore.QObject):
     def _remove_telemetry(self):
         self._streams['space_ut'].remove()
         self._streams['vessel_position'].remove()
+        self._streams['vessel_velocity'].remove()
         self._streams['vessel_mass'].remove()
         self._streams['vessel_thrust'].remove()
         self._streams['vessel_max_thrust'].remove()
@@ -274,10 +278,12 @@ class KPFlightController(QtCore.QObject):
         
     def _sts_telemetry_update(self):
         # obtain telemetry data
+        #-------------------------------
         for stream_key in self._streams:
             self._telemetry[stream_key] = self._streams[stream_key]()
         
         # compute telemetry parameters
+        #-------------------------------
         body_to_vessel_distance_sq = (
             self._telemetry['vessel_position'][0] ** 2
             + self._telemetry['vessel_position'][1] ** 2
@@ -286,6 +292,38 @@ class KPFlightController(QtCore.QObject):
         self._telemetry['body_gravity'] = self._telemetry['space_g'] * self._telemetry['body_mass'] / body_to_vessel_distance_sq
         self._telemetry['vessel_weight'] = self._telemetry['body_gravity'] * self._telemetry['vessel_mass']
 
+        # vector: body center to vessel (normalized, and magnitude)
+        vecn_body_to_vessel = vector_normalize(self._telemetry['vessel_position'])
+        #vecm_body_to_vessel = vector_length(self._telemetry['vessel_position'])
+
+        # vector: pointing northward, in body reference frame
+        #vecn_vessel_to_north = self._krpc.space_center.transform_direction((0,1,0), self._telemetry['vessel_srf_reff'], self._telemetry['body_reff'])
+        
+        # vector: pointing eastward, in body reference frame
+        #vecn_vessel_to_east = self._krpc.space_center.transform_direction((0,0,1), self._telemetry['vessel_srf_reff'], self._telemetry['body_reff'])
+
+        # vector: vessel's velocity along the north vector
+        #vec_vessel_vel_north = vector_dot_product(self._telemetry['vessel_velocity'], vecn_vessel_to_north)
+
+        # vector: vessel's velocity along the east vector
+        #vec_vessel_vel_north = vector_dot_product(self._telemetry['vessel_velocity'], vecn_vessel_to_east)
+
+        # vector: vessel's velocity on the surface plane
+        vec_vessel_velocity_planar = vector_project_onto_plane(self._telemetry['vessel_velocity'], vecn_body_to_vessel)
+        vecn_vessel_velocity_planar = vector_normalize(vec_vessel_velocity_planar)
+        vecm_vessel_velocity_planar = vector_length(vec_vessel_velocity_planar)
+        self._telemetry['vessel_planar_speed'] = vecm_vessel_velocity_planar
+
+        # vector: opposite to vessel's velocity on the surface plane
+        vecn_vessel_counter_velocity_planar = vector_scale(vecn_vessel_velocity_planar, -1.0)
+        #veca_vessel_counter_velocity = math.fabs(self.ctrl['attitude'].getOutputValue())
+        veca_vessel_counter_velocity = min(30.0, math.fabs(vecm_vessel_velocity_planar) * 2.0)
+        vecm_vessel_counter_velocity = math.tan(math.radians(veca_vessel_counter_velocity))
+        vec_vessel_counter_velocity_planar = vector_scale(vecn_vessel_counter_velocity_planar, vecm_vessel_counter_velocity)
+        vec_vessel_counter_velocity = vector_add(vec_vessel_counter_velocity_planar, vecn_body_to_vessel)
+        self._telemetry['vessel_stabilize_vector'] = vec_vessel_counter_velocity
+
+        
 
     def _lts_telemetry_update(self):
         # check the current orbiting body
@@ -301,10 +339,27 @@ class KPFlightController(QtCore.QObject):
     def _control_update(self):
         control_commands = self.mission_ctrl.get_controls()
 
+        # update automatic controllers
+        throttle_command = self.ctrl['vspeed'].update(self._telemetry['vessel_vertical_speed'])
+        vspeed_command   = self.ctrl['altitude'].update(self._telemetry['vessel_mean_altitude'])
+        attitude_command = self.ctrl['attitude'].update(self._telemetry['vessel_planar_speed'])
+
         # issue attitude commands
         self._telemetry['vessel_control'].yaw       = control_commands['yaw']
         self._telemetry['vessel_control'].pitch     = control_commands['pitch']
         self._telemetry['vessel_control'].roll      = control_commands['roll']
+
+        # issue control commands
+        if control_commands['throttle_cmd']:
+            self._telemetry['vessel_control'].throttle = throttle_command
+            
+        if control_commands['attitude_cmd']:
+            self._telemetry['vessel_autopilot'].reference_frame     = self._telemetry['body_reff']
+            self._telemetry['vessel_autopilot'].target_direction    = self._telemetry['vessel_stabilize_vector']
+            self._telemetry['vessel_autopilot'].target_roll         = math.nan
+            self._telemetry['vessel_autopilot'].engage()
+        else:
+            self._telemetry['vessel_autopilot'].disengage()
 
     
     def _krpc_heartbeat(self):
@@ -324,38 +379,46 @@ class KPFlightController(QtCore.QObject):
     #===========================================================================
     @pyqtSlot()
     def short_term_processing(self):
-        start_time = time.time()
-        #--
-        
-        if self.krpc_is_connected:
+        try:
+            start_time = time.time()
+            #--
+            
+            if self.krpc_is_connected:
 
-            # check the game scene
-            self._telemetry['game_scene'] = self._streams['game_scene']()
+                # check the game scene
+                self._telemetry['game_scene'] = self._streams['game_scene']()
 
-            # if we are in the Flight scene, continue processing
-            if self._telemetry['game_scene'] == self._krpc.krpc.GameScene.flight:
+                # if we are in the Flight scene, continue processing
+                if self._telemetry['game_scene'] == self._krpc.krpc.GameScene.flight:
 
-                # set up telemetry for the vessel if it hasn't already been done
-                if not self._telemetry['vessel_is_active']:
-                    self._setup_telemetry()
+                    # set up telemetry for the vessel if it hasn't already been done
+                    if not self._telemetry['vessel_is_active']:
+                        self._setup_telemetry()
+
+                    else:
+                        self._sts_telemetry_update()
+                        self._control_update()
 
                 else:
-                    self._sts_telemetry_update()
-                    self._control_update()
+                    # otherwise, unset the active vessel and telemetry
+                    self._telemetry['vessel_is_active'] = False
 
-            else:
-                # otherwise, unset the active vessel and telemetry
-                self._telemetry['vessel_is_active'] = False
-
-            # emit telemetry updates
-            self.telemetry_updated.emit(self._telemetry)
-        
-        #--
-        process_time = time.time() - start_time
-        self._telemetry['scheduler_timings']['sts'].update(process_time)
-        if process_time > KPFlightController.sts_period:
-            self._log_warning('STS overrun: {:.1f} ms, overrun by {:.3f} ms'.format(
-                process_time * 1000.0, (process_time - KPFlightController.sts_period) * 1000.0))
+                # emit telemetry updates
+                self.telemetry_updated.emit(self._telemetry)
+            
+            #--
+            process_time = time.time() - start_time
+            self._telemetry['scheduler_timings']['sts'].update(process_time)
+            if process_time > KPFlightController.sts_period:
+                self._log_warning('STS overrun: {:.1f} ms, overrun by {:.3f} ms'.format(
+                    process_time * 1000.0, (process_time - KPFlightController.sts_period) * 1000.0))
+            
+        except ConnectionAbortedError as abort:
+            self._log_exception('KRPC connection aborted', abort)
+            self.krpc_disconnect()
+        except ConnectionResetError as reset:
+            self._log_exception('KRPC connection reset by host', reset)
+            self.krpc_disconnect()
         
             
         

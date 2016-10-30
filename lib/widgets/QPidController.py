@@ -119,6 +119,9 @@ class QPidController(QtCore.QObject):
         
     def getDerivativeValue(self):
         return self._pid._d_value
+
+    def getOutputValue(self):
+        return self._pid._u
         
     def update(self, current_value):
         output = self._pid.update(current_value)
@@ -156,21 +159,23 @@ class QPidControllerPanel(QWidget):
         super(QPidControllerPanel, self).__init__(**kwds)
         
         # PidControllerQ object
-        self._pid = pid_controller
+        self._pid           = pid_controller
         
         # setup widgets
-        set_point_label = QLabel("Ref.")
-        kp_label = QLabel("Kp")
-        ki_label = QLabel("Ki")
-        kd_label = QLabel("Kd")
+        set_point_label     = QLabel("Ref.")
+        kp_label            = QLabel("Kp")
+        ki_label            = QLabel("Ki")
+        kd_label            = QLabel("Kd")
+        output_label        = QLabel("Out")
         
-        set_point_editor = QDoubleSpinBox()
-        kp_editor = QDoubleSpinBox()
-        ki_editor = QDoubleSpinBox()
-        kd_editor = QDoubleSpinBox()
+        set_point_editor    = QDoubleSpinBox()
+        kp_editor           = QDoubleSpinBox()
+        ki_editor           = QDoubleSpinBox()
+        kd_editor           = QDoubleSpinBox()
+        output_editor       = QDoubleSpinBox()
         
 		# set labels' alignment
-        self._labels = [set_point_label, kp_label, ki_label, kd_label]
+        self._labels = [set_point_label, kp_label, ki_label, kd_label, output_label]
         for label in self._labels:
             label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         
@@ -179,9 +184,11 @@ class QPidControllerPanel(QWidget):
         kp_editor.setValue(self._pid.getProportionalGain())
         ki_editor.setValue(self._pid.getIntegralGain())
         kd_editor.setValue(self._pid.getDerivativeGain())
+        output_editor.setValue(self._pid.getOutputValue())
+        output_editor.setEnabled(False)
         
 		# spinbox settings
-        self._editors = [set_point_editor, kp_editor, ki_editor, kd_editor]
+        self._editors = [set_point_editor, kp_editor, ki_editor, kd_editor, output_editor]
         for editor in self._editors:
             editor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             editor.setDecimals(4)
@@ -226,6 +233,7 @@ class QPidControllerPanel(QWidget):
         
         # connect signals
         self._pid.outputChanged.connect(self.pidOutputChanged)
+        self._pid.outputChanged.connect(output_editor.setValue)
         self._pid.setpointChanged.connect(set_point_editor.setValue)
         self._pid.kpChanged.connect(kp_editor.setValue)
         self._pid.kiChanged.connect(ki_editor.setValue)
